@@ -3634,35 +3634,66 @@ static void draw_carousel(menu_t *menu) {
             path_free(sp);
         }
     }
+    /* Right column, top to bottom (PixelMplus 12: ~11px ascent, 3px descent,
+       ~14px per line; a box shows a line only if it fits completely):
+         title  y 117..133  one line, SAVE tag right-aligned on the same line
+         desc   y 135..167  two lines
+         status baseline 180
+       v25 drew the save tag over the screenshot and gave the description a
+       20px box (one line). */
+    #define CAR_TITLE_Y   (CAR_SHOT_Y + 3)
+    #define CAR_TITLE_H   16
+    #define CAR_DESC_Y    (CAR_TITLE_Y + CAR_TITLE_H + 2)
+    #define CAR_DESC_H    ((LAYOUT_ACTIONS_SEPARATOR_Y - 16) - CAR_DESC_Y)
+    #define CAR_SAVE_W    56
+
     if (ec->has_save > 0) {
         rdpq_text_print(
-            &(rdpq_textparms_t){ .style_id = STL_YELLOW, .width = CAR_SHOT_W,
-                                 .align = ALIGN_LEFT },
-            FNT_DEFAULT, CAR_SHOT_X, LAYOUT_ACTIONS_SEPARATOR_Y - 4, "* save data");
+            &(rdpq_textparms_t){ .style_id = STL_YELLOW, .width = CAR_TEXT_W,
+                                 .height = CAR_TITLE_H, .align = ALIGN_RIGHT },
+            FNT_DEFAULT, CAR_TEXT_X, CAR_TITLE_Y, "SAVE");
     }
 
-    /* Title: plain text, up to two lines -- box logos are unreadable on CRT,
-       so this is THE title, not a supplement (playtest request). */
-    const char *title = (ec->meta_name[0]) ? ec->meta_name : ec->title;
+    /* Title: the database name ("1080 Snowboarding") first. v25 only had a clean
+       name for games WITHOUT art (meta_name), so games with art fell back to the
+       raw 20-char ROM header, which could be blank. Then the header, then the
+       file name, so the line is never empty. */
+    const char *title = NULL;
+    if (inspect_has_meta && inspect_meta.title && inspect_meta.title[0]) {
+        title = inspect_meta.title;
+    } else if (ec->meta_name[0]) {
+        title = ec->meta_name;
+    } else {
+        const char *t = ec->title;
+        while (*t == ' ') t++;
+        if (*t) {
+            title = t;
+        } else {
+            bookkeeping_item_t *bk = &menu->bookkeeping.favorite_items[sfi];
+            title = bk->primary_path ? path_last_get(bk->primary_path) : "";
+        }
+    }
+    int title_w = CAR_TEXT_W - ((ec->has_save > 0) ? CAR_SAVE_W : 0);
     rdpq_text_printn(
-        &(rdpq_textparms_t){ .style_id = STL_DEFAULT, .width = CAR_TEXT_W,
-                             .height = 26, .align = ALIGN_LEFT, .wrap = WRAP_ELLIPSES },
-        FNT_DEFAULT, CAR_TEXT_X, CAR_SHOT_Y + 8, title, strlen(title));
+        &(rdpq_textparms_t){ .style_id = STL_DEFAULT, .width = title_w,
+                             .height = CAR_TITLE_H, .align = ALIGN_LEFT, .wrap = WRAP_ELLIPSES },
+        FNT_DEFAULT, CAR_TEXT_X, CAR_TITLE_Y, title, strlen(title));
 
-    /* Description */
+    /* Description: word-wrapped; the box height keeps it to two lines
+       (WRAP_ELLIPSES is single-line only in libdragon). */
     const char *desc = (inspect_has_meta && inspect_meta.description && inspect_meta.description[0])
                        ? inspect_meta.description : "No description available.";
     rdpq_text_printn(
         &(rdpq_textparms_t){ .style_id = STL_GRAY, .width = CAR_TEXT_W,
-                             .height = (LAYOUT_ACTIONS_SEPARATOR_Y - 16) - (CAR_SHOT_Y + 34),
+                             .height = CAR_DESC_H,
                              .align = ALIGN_LEFT, .wrap = WRAP_WORD,
                              .line_spacing = TEXT_LINE_SPACING_ADJUST },
-        FNT_DEFAULT, CAR_TEXT_X, CAR_SHOT_Y + 34, desc, strlen(desc));
+        FNT_DEFAULT, CAR_TEXT_X, CAR_DESC_Y, desc, strlen(desc));
 
     /* Status line: active shelf + position + build version, well inside the
        safe area (the bottom bar's right slot is cropped on the user's CRT). */
     char status[48];
-    snprintf(status, sizeof(status), "Shelf: %s (%d/%d)  v25",
+    snprintf(status, sizeof(status), "Shelf: %s (%d/%d)  v26",
              shelves[active_shelf].name, fav_count ? sel_fav + 1 : 0, fav_count);
     rdpq_text_print(
         &(rdpq_textparms_t){ .style_id = STL_YELLOW, .width = CAR_TEXT_W,

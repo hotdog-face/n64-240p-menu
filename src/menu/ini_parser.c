@@ -623,15 +623,34 @@ static bool value_needs_quoting(const char *value) {
 }
 
 
+/* Saves overwrite the file IN PLACE and pad the tail with newlines, so the file
+   never changes size and the FAT allocation table is never touched. On the
+   EverDrive-64 V3, truncate-and-regrow (fopen "wb") on every game launch
+   cross-linked history.ini into the /ED64 directory and wiped the OS file
+   (2026-11-12). New files are created once at a padded size with headroom. */
+#define INI_SAVE_RESERVE  (32 * 1024)
+
 bool ini_save(ini_t *ini, const char *path) {
     if (!ini || !path) return false;
-    
-    FILE *file = fopen(path, "wb");
+
+    long old_size = 0;
+    FILE *file = fopen(path, "r+b");
+    if (file) {
+        if (fseek(file, 0, SEEK_END) == 0) old_size = ftell(file);
+        if (old_size < 0 || fseek(file, 0, SEEK_SET) != 0) {
+            fclose(file);
+            file = NULL;
+        }
+    }
+    if (!file) {
+        old_size = 0;
+        file = fopen(path, "wb");
+    }
     if (!file) {
         debugf("[INI] ini_save(%s): cannot open file for writing\n", path);
         return false;
     }
-    
+
     bool ok = true;
     bool wrote_any_block = false;
 
@@ -691,6 +710,25 @@ bool ini_save(ini_t *ini, const char *path) {
             }
         }
         wrote_any_block = true;
+    }
+    /* Pad to the old size (in-place rewrite: size unchanged), or on first
+       creation / growth up to the next reserve boundary so later saves fit. */
+    if (ok) {
+        long end = ftell(file);
+        long target = old_size;
+        if (end > old_size) {
+            target = ((end / INI_SAVE_RESERVE) + 1) * INI_SAVE_RESERVE;
+        }
+        if (end < 0) {
+            ok = false;
+        } else {
+            static const char pad[256] = { [0 ... 255] = '\n' };
+            for (long left = target - end; left > 0 && ok; ) {
+                size_t n = left > (long)sizeof(pad) ? sizeof(pad) : (size_t)left;
+                if (fwrite(pad, 1, n, file) != n) ok = false;
+                left -= (long)n;
+            }
+        }
     }
     debugf("[INI] ini_save(%s): saving complete\n", path);
     return fclose(file) == 0 && ok;

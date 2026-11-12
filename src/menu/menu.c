@@ -130,6 +130,13 @@ static void diag_probe_dir (const char *p) {
 }
 
 static void diag_run_probes (const char *prefix) {
+#ifndef MENU_DIAG_LOG
+    /* Off in normal builds: every boot rewrote this log and each button press
+       appended to it, a steady stream of SD writes that grow a file. On the
+       ED64 V3 those writes corrupt the card. Build with -DMENU_DIAG_LOG to debug. */
+    (void)prefix;
+    return;
+#endif
     snprintf(diag_path, sizeof(diag_path), "%smenu/240p_boot_log.txt", prefix);
     FILE *f = fopen(diag_path, "wb");
     if (!f) return;
