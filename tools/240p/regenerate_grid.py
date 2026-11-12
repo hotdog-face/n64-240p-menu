@@ -98,7 +98,11 @@ for i, (prio, title, sdpath, code) in enumerate(entries):
 fav = ROOT + '/menu/n64ever/favorites.ini'
 if os.path.exists(fav):
     shutil.copy(fav, fav + '.bak')
-with open(fav, 'w') as f:
-    f.write('\n'.join(lines) + '\n')
+# Pre-size to a 32 KB multiple with trailing newlines: the menu (v26+) rewrites
+# this file IN PLACE and never grows it, which keeps the ED64 V3 from touching the FAT.
+data = ('\n'.join(lines) + '\n').encode('utf-8')
+size = max(32768, (len(data) // 32768 + 1) * 32768)
+with open(fav, 'wb') as f:
+    f.write(data + b'\n' * (size - len(data)))
 os.sync() if hasattr(os, 'sync') else None
 print('favorites.ini written:', len(entries), 'entries')

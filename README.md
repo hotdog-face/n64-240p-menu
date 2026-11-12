@@ -33,6 +33,28 @@ Case study: [mitchellv.me/work/n64-240p-menu](https://www.mitchellv.me/work/n64-
 | C-up / C-down | Cycle shelves |
 | R | Menu |
 
+## Quick start
+
+1. Download `OS64.v64` from the [latest release](https://github.com/hotdog-face/n64-240p-menu/releases).
+2. Back up your SD card, including the stock `ED64` folder.
+3. Copy `OS64.v64` to `ED64/OS64.v64` on a FAT32 card (32 GB or smaller is safest on the V3).
+4. Create an empty file `menu/n64ever/.migrated.v1`, or the menu clears your favorites on
+   its first boot.
+5. Boot. With no shelf yet, the menu opens on a greeting. Use B for the file browser and hold
+   B on a game to add it to the shelf, or generate a shelf on a computer with
+   [tools/240p/curate_grid.py](tools/240p/curate_grid.py) (set `ROOT` to the card's mount
+   point and edit the `CURATED` title list).
+
+Cover art is optional; without it, games appear in the file browser but not on the carousel.
+Build the art pak with the scripts in [tools/240p](tools/240p) from art you own.
+
+This build targets the **EverDrive-64 V3** and true 240p. On a SummerCart64, 64drive or X7,
+use upstream [N64ever](https://github.com/bjerreman/N64FlashcartMenu-N64ever) or
+[N64FlashcartMenu](https://github.com/Polprzewodnikowy/N64FlashcartMenu) instead.
+
+Current state, open issues and the lessons behind each fix:
+[docs/240p/STATUS.md](docs/240p/STATUS.md).
+
 ## Building
 
 You need the libdragon toolchain (`N64_INST` set) and this repo's submodules:
@@ -50,8 +72,9 @@ The V3's bootloader copies the menu into the cart's internal flash on boot. From
 
 1. **Keep the ROM at or under 2,048,000 bytes.** Larger files fail with ERROR:91.
 2. **Every new build must differ in size from the one already flashed.** The bootloader skips
-   same-size files. The ROM pads in 16 KB steps, so pad `filesystem/version.txt` to cross a
-   boundary.
+   same-size files. The ROM pads in 16 KB steps, so put a file of spaces at
+   `filesystem/size_pad.txt` (big enough to cross a 16 KB boundary), `rm build/*.dfs`, and
+   rebuild.
 3. **ERROR:91 right after copying a new build is often transient.** Power-cycle a few times
    before changing anything.
 
