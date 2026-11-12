@@ -2036,13 +2036,12 @@ static void process (menu_t *menu) {
                     b_skip_release = false;
                 } else if (b_hold > 0 && b_hold < 20) {
                     if (browser_at_root(menu)) {
-                        if (root_b_primed) {
-                            root_b_primed = false; popup_scroll = 0;
-                            menu->next_mode = MENU_MODE_GAMES_GRID;
-                            sound_play_effect(SFX_CURSOR);
-                        } else {
-                            root_b_primed = true;
-                        }
+                        /* One tap of B at the top level closes the popup. v25 wanted a
+                           double tap and gave no feedback on the first, so B felt dead
+                           (playtest 2026-11-12). */
+                        root_b_primed = false; popup_scroll = 0;
+                        menu->next_mode = MENU_MODE_GAMES_GRID;
+                        sound_play_effect(SFX_EXIT);
                     } else {
                         root_b_primed = false;
                         if (pop_directory(menu)) { menu->browser.valid = false; menu_show_error(menu, "Couldn't open last directory"); }

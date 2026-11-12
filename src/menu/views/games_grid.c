@@ -3693,7 +3693,7 @@ static void draw_carousel(menu_t *menu) {
     /* Status line: active shelf + position + build version, well inside the
        safe area (the bottom bar's right slot is cropped on the user's CRT). */
     char status[48];
-    snprintf(status, sizeof(status), "Shelf: %s (%d/%d)  v26",
+    snprintf(status, sizeof(status), "Shelf: %s (%d/%d)  v27",
              shelves[active_shelf].name, fav_count ? sel_fav + 1 : 0, fav_count);
     rdpq_text_print(
         &(rdpq_textparms_t){ .style_id = STL_YELLOW, .width = CAR_TEXT_W,

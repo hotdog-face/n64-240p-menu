@@ -22,6 +22,22 @@ static component_context_menu_t *get_current_submenu(component_context_menu_t *c
     return cm;
 }
 
+/* Exact distance between two baselines for FNT_DEFAULT, measured from a tiny
+   two-line layout (libdragon has no public ascent/line-height getter). Measured
+   every call because the font can change at runtime (legacy font setting). */
+static int context_menu_line_height(void) {
+    int nbytes = 3;
+    rdpq_paragraph_t *p = rdpq_paragraph_build(
+        &(rdpq_textparms_t){ .line_spacing = TEXT_LINE_SPACING_ADJUST }, FNT_DEFAULT, "A\nA", &nbytes);
+    int lh = 0;
+    if (p && p->nchars >= 2) {
+        lh = p->chars[1].y - p->chars[0].y;
+        if (lh < 0) lh = -lh;
+    }
+    if (p) rdpq_paragraph_free(p);
+    return lh > 0 ? lh : 14;
+}
+
 /**
  * @brief Initialize the context menu component.
  *
@@ -163,7 +179,11 @@ void ui_components_context_menu_draw(component_context_menu_t *cm) {
     /* Guard against a degenerate (empty) layout: nlines == 0 would divide by zero
        (bbox is float, so this faults as an FPU DIV0 exception). Skip the highlight. */
     if (layout->nlines > 0) {
-        int highlight_height = (layout->bbox.y1 - layout->bbox.y0) / layout->nlines;
+        /* Step rows by the font's real line height. v25 used bbox height / nlines,
+           but blank separator rows aren't counted in nlines, so the bar drifted
+           further off the text on every row below a separator. bbox.y0 is the
+           top of the first row's line box (baseline - ascent). */
+        int highlight_height = context_menu_line_height();
         int highlight_y = VISIBLE_AREA_Y0 + layout->bbox.y0 + ((cm->row_selected) * highlight_height);
 
         ui_components_box_draw(
