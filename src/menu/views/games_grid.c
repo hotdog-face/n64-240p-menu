@@ -600,7 +600,7 @@ static const char *const SHELF_ADVENTURE[] = {
     "Silicon Valley", "Rayman", "Glover", "Chameleon", "Custom Robo", "Shiren",
     "Bomberman Hero", "Kirby", "Yoshi", "Animal Forest", "Harvest Moon",
 };
-static const char *const SHELF_SPORTS[] = {
+static const char *const SHELF_SPORTS[] __attribute__((unused)) = {
     "1080", "Tony Hawk", "Mario Golf", "Mario Tennis", "International Superstar",
     "Wayne Gretzky", "Ken Griffey", "NFL Blitz", "NBA Hangtime", "Excitebike",
     "Snowboard Kids", "In-Fisherman", "Wave Race", "WWF", "Virtual Pro Wrestling",
@@ -626,7 +626,7 @@ static const shelf_t shelves[] = {
     { "Racing",    SHELF_RACING,     SHELF_N(SHELF_RACING),     0 },
     { "Action",    SHELF_ACTION,     SHELF_N(SHELF_ACTION),     0 },
     { "Adventure", SHELF_ADVENTURE,  SHELF_N(SHELF_ADVENTURE),  0 },
-    { "Sports",    SHELF_SPORTS,     SHELF_N(SHELF_SPORTS),     0 },
+    /* Sports shelf removed v28: sports games taken off the card's shelf on request. */
     { "Chill",     SHELF_CHILL,      SHELF_N(SHELF_CHILL),      0 },
 };
 #define SHELF_COUNT (int)(sizeof(shelves) / sizeof(shelves[0]))
@@ -3693,7 +3693,7 @@ static void draw_carousel(menu_t *menu) {
     /* Status line: active shelf + position + build version, well inside the
        safe area (the bottom bar's right slot is cropped on the user's CRT). */
     char status[48];
-    snprintf(status, sizeof(status), "Shelf: %s (%d/%d)  v27",
+    snprintf(status, sizeof(status), "Shelf: %s (%d/%d)  v28",
              shelves[active_shelf].name, fav_count ? sel_fav + 1 : 0, fav_count);
     rdpq_text_print(
         &(rdpq_textparms_t){ .style_id = STL_YELLOW, .width = CAR_TEXT_W,

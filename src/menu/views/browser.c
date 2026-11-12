@@ -325,6 +325,10 @@ static bool load_directory (menu_t *menu) {
         result = dir_findnext(path_get(path), &info);
     }
 
+    {
+        extern void menu_diag_log (const char *fmt, ...);
+        menu_diag_log("browser: %s -> %d entries (r=%d errno=%d)\n", path_get(path), menu->browser.entries, result, errno);
+    }
     path_free(path);
 
     if (result < -1) {
@@ -1695,7 +1699,11 @@ static bool browser_at_root(menu_t *menu) {
 #define POPUP_MAX_VIS     8   /* fixed visible rows → constant box height */
 #define POPUP_PAD_X      16
 #define POPUP_PAD_Y      8
-#define POPUP_HDR_H      16   /* path breadcrumb header inside the box */
+#define POPUP_HDR_H      20   /* path breadcrumb header inside the box (v28: room for the rule under the text) */
+/* Text box for one row. libdragon skips a line whose box is shorter than
+   ascent+descent+1 (15px for PixelMplus 12), so a 13px box drew NOTHING:
+   the v26/v27 file popup listed folders with blank rows. */
+#define POPUP_TEXT_H     16
 
 /* Is this entry a ROM currently in the favorites (grid) list? */
 static bool popup_entry_is_fav(menu_t *menu, entry_t *e) {
@@ -1759,7 +1767,7 @@ static void draw_file_popup(menu_t *menu) {
     /* Path breadcrumb header inside the box (trimmed from the left when long), with a
        favourites counter "X/128 *" right-aligned on the same row. */
     {
-        int hy = y0 + POPUP_PAD_Y + 14;
+        int hy = y0 + POPUP_PAD_Y + 12;   /* baseline; text spans hy-11 .. hy+3 */
         if (link_pick_active) {
             /* Link-pick banner replaces the breadcrumb: what we're pairing + which type to pick. */
             char banner[96];
@@ -1784,8 +1792,10 @@ static void draw_file_popup(menu_t *menu) {
                 &(rdpq_textparms_t){ .style_id = STL_YELLOW, .width = rw, .align = ALIGN_RIGHT },
                 FNT_DEFAULT, rx, hy, "%d/%d *", favn, FAVORITES_COUNT);
         }
-        ui_components_box_draw(rx, y0 + POPUP_PAD_Y + POPUP_HDR_H - 6,
-                               x0 + POPUP_W - POPUP_PAD_X, y0 + POPUP_PAD_Y + POPUP_HDR_H - 5,
+        /* Rule UNDER the header text (v27 drew it 4px above the baseline,
+           striking through "SD:/ ... 111/2048"). */
+        ui_components_box_draw(rx, y0 + POPUP_PAD_Y + POPUP_HDR_H - 3,
+                               x0 + POPUP_W - POPUP_PAD_X, y0 + POPUP_PAD_Y + POPUP_HDR_H - 2,
                                RGBA32(0x44, 0x44, 0x44, 0xFF));
     }
 
@@ -1829,7 +1839,7 @@ static void draw_file_popup(menu_t *menu) {
                 if (popup_hscroll > maxsc) popup_hscroll = maxsc;
                 rdpq_set_scissor(nx, row_top, nx + avail, row_top + POPUP_LINE_H);
                 rdpq_text_printf(
-                    &(rdpq_textparms_t){ .style_id = st, .height = POPUP_LINE_H,
+                    &(rdpq_textparms_t){ .style_id = st, .height = POPUP_TEXT_H,
                                          .align = ALIGN_LEFT, .valign = VALIGN_CENTER },
                     FNT_DEFAULT, nx - popup_hscroll, row_top, "%s", e->name);
                 rdpq_set_scissor(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
@@ -1837,7 +1847,7 @@ static void draw_file_popup(menu_t *menu) {
                 rdpq_text_printf(
                     &(rdpq_textparms_t){
                         .style_id = st,
-                        .width = rw - 16 - sz_gut, .height = POPUP_LINE_H,
+                        .width = rw - 16 - sz_gut, .height = POPUP_TEXT_H,
                         .align = ALIGN_LEFT, .valign = VALIGN_CENTER, .wrap = WRAP_ELLIPSES,
                     },
                     FNT_DEFAULT, nx, row_top, "%s", e->name);
@@ -1848,13 +1858,13 @@ static void draw_file_popup(menu_t *menu) {
                 char szb[16];
                 fmt_size_compact(e->size, szb, sizeof szb);
                 rdpq_text_print(
-                    &(rdpq_textparms_t){ .style_id = STL_GRAY, .width = sz_gut - 4, .height = POPUP_LINE_H,
+                    &(rdpq_textparms_t){ .style_id = STL_GRAY, .width = sz_gut - 4, .height = POPUP_TEXT_H,
                                          .align = ALIGN_LEFT, .valign = VALIGN_CENTER },
                     FNT_DEFAULT, rx, row_top, szb);
             }
             if (fav) {
                 rdpq_text_print(
-                    &(rdpq_textparms_t){ .style_id = STL_YELLOW, .width = rw, .height = POPUP_LINE_H,
+                    &(rdpq_textparms_t){ .style_id = STL_YELLOW, .width = rw, .height = POPUP_TEXT_H,
                                          .align = ALIGN_RIGHT, .valign = VALIGN_CENTER },
                     FNT_DEFAULT, rx, row_top, "*");
             }

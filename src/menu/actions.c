@@ -120,7 +120,7 @@ static void actions_update_buttons (menu_t *menu) {
     if (pressed.raw) {
         extern void menu_diag_log (const char *fmt, ...);
         static int diag_presses = 0;
-        if (diag_presses < 80) {
+        if (diag_presses < 300) {
             diag_presses++;
             menu_diag_log("btn a=%d b=%d z=%d start=%d L=%d R=%d cu=%d cd=%d cl=%d cr=%d du=%d dd=%d dl=%d dr=%d\n",
                 pressed.a, pressed.b, pressed.z, pressed.start, pressed.l, pressed.r,

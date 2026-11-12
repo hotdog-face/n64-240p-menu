@@ -4,6 +4,7 @@
  * @ingroup ui_components
  */
 
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -284,21 +285,24 @@ static int pak_type_id (file_image_type_t t) {
     }
 }
 
+extern void menu_diag_log (const char *fmt, ...);
 static void pak_open (void) {
     if (pak_n >= 0) return;
     pak_n = 0;
     FILE *f = fopen(ART_PAK_PATH, "rb");
-    if (!f) return;
+    if (!f) { menu_diag_log("pak: fopen failed errno=%d\n", errno); return; }
     uint32_t hdr[2];
     if (fread(hdr, sizeof(uint32_t), 2, f) != 2 ||
         hdr[0] != ART_PAK_MAGIC || hdr[1] == 0 || hdr[1] > ART_PAK_MAX_ENTRIES) {
+        menu_diag_log("pak: bad header %08lx %lu errno=%d\n", (unsigned long)hdr[0], (unsigned long)hdr[1], errno);
         fclose(f);
         return;
     }
     int n = (int)hdr[1];
     pak_recs = malloc((size_t)n * sizeof(pak_rec_t));
-    if (!pak_recs) { fclose(f); return; }
+    if (!pak_recs) { menu_diag_log("pak: malloc %d recs failed\n", n); fclose(f); return; }
     if (fread(pak_recs, sizeof(pak_rec_t), n, f) != (size_t)n) {
+        menu_diag_log("pak: table read failed n=%d errno=%d\n", n, errno);
         free(pak_recs);
         pak_recs = NULL;
         fclose(f);
@@ -316,6 +320,7 @@ static void pak_open (void) {
             (long)r->offset + (long)r->size > fsz ||
             r->key < prev_key || (r->key == prev_key && (int)r->type <= prev_type)) {
             debugf("[BOXART] pak rejected: bad record %d\n", i);
+            menu_diag_log("pak: bad record %d of %d (fsz=%ld)\n", i, n, fsz);
             free(pak_recs);
             pak_recs = NULL;
             fclose(f);
@@ -327,6 +332,7 @@ static void pak_open (void) {
     pak_file = f;   /* kept open for the whole session */
     pak_n = n;
     debugf("[BOXART] pak loaded: %d entries\n", pak_n);
+    menu_diag_log("pak: loaded %d entries\n", pak_n);
 }
 
 /* bsearch over records sorted by (key, type). */
@@ -373,6 +379,7 @@ static void art_index_build (void) {
         fclose(cf);
         if (art_index_n > 0) {
             debugf("[BOXART] art index cache hit: %d entries\n", art_index_n);
+            menu_diag_log("artindex: from cache %d\n", art_index_n);
             return;
         }
     }
@@ -413,6 +420,7 @@ static void art_index_build (void) {
     }
     qsort(art_index, art_index_n, sizeof(uint32_t), art_key_cmp);
     debugf("[BOXART] indexed %d art directories\n", art_index_n);
+    menu_diag_log("artindex: dir scan %d (last shard r=%d errno=%d)\n", art_index_n, rs, errno);
 
     if (art_index_n > 0) {
         cf = fopen(ART_INDEX_CACHE, "wb");

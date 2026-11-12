@@ -516,6 +516,14 @@ static void load (menu_t *menu) {
     err = cart_load_n64_rom_and_save(menu, draw_progress);
 #endif
 
+    {
+        extern void menu_diag_log (const char *fmt, ...);
+        menu_diag_log("launch: %s err=%d cic=%d save=%d exp=%d code=%.4s\n",
+            path_get(menu->load.rom_path), (int)err,
+            (int)menu->load.rom_info.cic_type, (int)menu->load.rom_info.save_type,
+            (int)menu->load.rom_info.features.expansion_pak,
+            menu->load.rom_info.game_code);
+    }
     if (err != CART_LOAD_OK) {
         /* Return to wherever the launch came from (grid/history), not always Files. */
         menu->error_return_mode = launch_origin_mode(menu);

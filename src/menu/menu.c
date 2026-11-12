@@ -83,19 +83,34 @@ static void migrate_legacy_layout (const char *prefix) {
     }
 }
 
-/* v10 DIAGNOSTIC black box: append-mode log at sd:/menu/240p_boot_log.txt.
-   Answers: what does dir enumeration see, and which fopen paths fail (errno). */
+/* Black box (v28): an in-place log for diagnosing the console remotely.
+   It only runs if sd:/menu/blackbox.txt already exists; the Mac creates it
+   pre-sized (filled with newlines). The console overwrites it from the start
+   each boot and never grows it, so the FAT is never touched -- unlike the v10
+   append-mode log, whose growth corrupted the card on the ED64 V3. Delete the
+   file to turn logging off. */
 static char diag_path[64];
 static bool diag_ok = false;
+static long diag_pos = 0;
+static long diag_cap = 0;
 
 void menu_diag_log (const char *fmt, ...) {
-    if (!diag_ok) return;
-    FILE *f = fopen(diag_path, "ab");
-    if (!f) return;
+    if (!diag_ok || diag_pos >= diag_cap) return;
+    char line[160];
     va_list va;
     va_start(va, fmt);
-    vfprintf(f, fmt, va);
+    int n = vsnprintf(line, sizeof(line), fmt, va);
     va_end(va);
+    if (n <= 0) return;
+    if (n > (int)sizeof(line) - 1) n = (int)sizeof(line) - 1;
+    if (diag_pos + n > diag_cap) n = (int)(diag_cap - diag_pos);
+    FILE *f = fopen(diag_path, "r+b");
+    if (!f) { diag_ok = false; return; }
+    if (fseek(f, diag_pos, SEEK_SET) == 0 && fwrite(line, 1, n, f) == (size_t)n) {
+        diag_pos += n;
+    } else {
+        diag_ok = false;
+    }
     fclose(f);
 }
 
@@ -114,43 +129,33 @@ static void diag_probe_open (const char *p) {
 static void diag_probe_dir (const char *p) {
     dir_t info;
     int n = 0;
-    char first[6][24] = {{0}};
+    errno = 0;
     int r = dir_findfirst(p, &info);
+    int first_r = r;
     while (r == 0) {
-        if (n < 6) {
-            snprintf(first[n], sizeof(first[0]), "%s%s", info.d_name,
-                     info.d_type == DT_DIR ? "/" : "");
-        }
         n++;
         r = dir_findnext(p, &info);
     }
-    menu_diag_log("dir %s -> %d entries:", p, n);
-    for (int i = 0; i < n && i < 6; i++) menu_diag_log(" %s", first[i]);
-    menu_diag_log("\n");
+    menu_diag_log("dir %s -> %d entries (first=%d last=%d errno=%d)\n", p, n, first_r, r, errno);
 }
 
 static void diag_run_probes (const char *prefix) {
-#ifndef MENU_DIAG_LOG
-    /* Off in normal builds: every boot rewrote this log and each button press
-       appended to it, a steady stream of SD writes that grow a file. On the
-       ED64 V3 those writes corrupt the card. Build with -DMENU_DIAG_LOG to debug. */
-    (void)prefix;
-    return;
-#endif
-    snprintf(diag_path, sizeof(diag_path), "%smenu/240p_boot_log.txt", prefix);
-    FILE *f = fopen(diag_path, "wb");
-    if (!f) return;
-    fprintf(f, "=== v10 probes t=%llu ms ===\n", get_ticks_ms());
+    snprintf(diag_path, sizeof(diag_path), "%smenu/blackbox.txt", prefix);
+    FILE *f = fopen(diag_path, "r+b");
+    if (!f) return;                      /* no pre-sized file on the card: logging off */
+    if (fseek(f, 0, SEEK_END) == 0) diag_cap = ftell(f);
     fclose(f);
+    if (diag_cap < 1024) return;
+    diag_cap -= 64;                      /* keep a newline tail so the file stays readable */
+    diag_pos = 0;
     diag_ok = true;
+    menu_diag_log("=== v28 boot t=%llu ms ===\n", get_ticks_ms());
     diag_probe_dir("sd:/");
     diag_probe_dir("sd:/menu");
     diag_probe_dir("sd:/menu/boxart");
     diag_probe_dir("sd:/Games A-M");
-    diag_probe_open("sd:/menu/config.ini");
+    diag_probe_open("sd:/menu/boxart.pak");
     diag_probe_open("sd:/menu/n64ever/favorites.ini");
-    diag_probe_open("sd:/menu/boxart/CD6Z/front.sprite");
-    diag_probe_open("sd:/menu/boxart/NSME/front.sprite");
 }
 
 /**
