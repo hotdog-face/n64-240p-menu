@@ -1,0 +1,15 @@
+diff --git a/src/fat.c b/src/fat.c
+index 8c8207d56..33ecd4470 100644
+--- a/src/fat.c
++++ b/src/fat.c
+@@ -108,9 +108,9 @@ static FIL static_fat_files[NUM_STATIC_FAT_FILES] = {0};
+ 
+ static void __fresult_set_errno(FRESULT err)
+ {
+-	assertf(err != FR_INT_ERR, "FatFS assertion error");
+ 	switch (err) {
+ 	case FR_OK: return;
++	case FR_INT_ERR:			errno = EIO; return;
+ 	case FR_DISK_ERR: 			errno = EIO; return;
+ 	case FR_NOT_READY: 			errno = EBUSY; return;
+ 	case FR_NO_FILE: 			errno = ENOENT; return;
