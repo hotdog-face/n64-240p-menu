@@ -15,6 +15,8 @@
 
 #include "boot/cic.h"
 #include "rom_info.h"
+
+extern void menu_diag_log (const char *fmt, ...);   /* v10 black box (menu.c) */
 #include "utils/fs.h"
 
 
@@ -1344,6 +1346,7 @@ rom_err_t rom_config_load (path_t *path, rom_info_t *rom_info) {
     debugf("[META] rom_config_load: starting for '%s'\\n", path_get(path));
 
     if ((f = fopen(path_get(path), "rb")) == NULL) {
+        menu_diag_log("ROM open FAIL errno=%d path=%s\n", errno, path_get(path));
         return ROM_ERR_NO_FILE;
     }
     setbuf(f, NULL);
@@ -1396,6 +1399,7 @@ rom_err_t rom_info_load_quick (path_t *path, rom_info_t *rom_info) {
     rom_header_t rom_header;
 
     if ((f = fopen(path_get(path), "rb")) == NULL) {
+        menu_diag_log("ROM open FAIL errno=%d path=%s\n", errno, path_get(path));
         return ROM_ERR_NO_FILE;
     }
     setbuf(f, NULL);

@@ -124,10 +124,11 @@ cart_load_err_t cart_load_n64_rom_and_save (menu_t *menu, flashcart_progress_cal
     }
 
 #ifndef FEATURE_AUTOLOAD_ROM_ENABLED
-    if (menu->settings.rom_fast_reboot_enabled) {
-        if (!flashcart_has_feature(FLASHCART_FEATURE_ROM_REBOOT_FAST)) {
-            return CART_LOAD_ERR_FUNCTION_NOT_SUPPORTED;
-        }
+    /* Fast-reboot is an OPTIONAL nicety (SC64-only): on carts without the feature
+       (ED64 V-series) silently skip it instead of refusing to launch the game —
+       an optional flag must never block the primary action. */
+    if (menu->settings.rom_fast_reboot_enabled &&
+        flashcart_has_feature(FLASHCART_FEATURE_ROM_REBOOT_FAST)) {
         menu->flashcart_err = flashcart_set_next_boot_mode(FLASHCART_REBOOT_MODE_ROM);
         if (menu->flashcart_err != FLASHCART_OK) {
             path_free(path);

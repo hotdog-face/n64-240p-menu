@@ -291,15 +291,15 @@ static void process (menu_t *menu) {
 
 static void blit_art (component_boxart_t *b, int cellx, int celly, int cw, int ch) {
     if (!b || b->loading || !b->image || !b->image->width || !b->image->height) return;
-    float sx = (float)cw / b->image->width, sy = (float)ch / b->image->height;
+    float sx = (float)cw / b->image->width, sy = (float)(ch * 2) / b->image->height;   /* 240p */
     float scale = (sx < sy) ? sx : sy;
-    int dw = (int)(b->image->width * scale), dh = (int)(b->image->height * scale);
+    int dw = (int)(b->image->width * scale), dh = (int)(b->image->height * scale / 2);
     int dx = cellx + (cw - dw) / 2, dy = celly + (ch - dh) / 2;
     rdpq_mode_push();
         rdpq_set_mode_standard();
         rdpq_mode_filter(FILTER_BILINEAR);
         rdpq_mode_alphacompare(ui_components_boxart_alpha_threshold(b));   /* higher for N64 3D carts */
-        rdpq_tex_blit(b->image, dx, dy, &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale });
+        rdpq_tex_blit(b->image, dx, dy, &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale / 2 });
     rdpq_mode_pop();
 }
 

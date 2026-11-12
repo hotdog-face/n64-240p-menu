@@ -30,7 +30,13 @@
  * @def DISPLAY_HEIGHT
  * @brief Height of the display (pixels).
  */
-#define DISPLAY_HEIGHT                  (480)
+#define DISPLAY_HEIGHT                  (240)
+/* TRUE 240p REGIME: the menu renders 640x240 progressive (crisp on CRTs). A full-screen
+   240p pixel is DOUBLE-TALL relative to square, so all vertical layout budgets here are
+   half their 480-era values, and art must be drawn at scale_y = scale_x / 2 to keep its
+   proportions (see the anisotropic fit blocks in games_grid.c / boxart.c). BOXART_* size
+   constants that describe SOURCE sprite dimensions keep their native values — only draw
+   positions and screen budgets are halved. */
 
 /**
  * @def DISPLAY_CENTER_X
@@ -52,7 +58,13 @@
  * @def OVERSCAN_HEIGHT
  * @brief Overscan margin on the Y axis (pixels).
  */
-#define OVERSCAN_HEIGHT                 (24)
+#define OVERSCAN_HEIGHT                 (24)   /* bottom margin (10%) */
+/**
+ * @def OVERSCAN_TOP
+ * @brief Overscan margin at the top of the screen (pixels). Asymmetric: the WEGA
+ * crops noticeably more at the top than the bottom.
+ */
+#define OVERSCAN_TOP                    (30)
 
 /**
  * @def VISIBLE_AREA_X0
@@ -63,7 +75,7 @@
  * @def VISIBLE_AREA_Y0
  * @brief Start Y coordinate of the visible display area.
  */
-#define VISIBLE_AREA_Y0                 (OVERSCAN_HEIGHT)
+#define VISIBLE_AREA_Y0                 (OVERSCAN_TOP)
 /**
  * @def VISIBLE_AREA_X1
  * @brief End X coordinate of the visible display area.
@@ -90,13 +102,13 @@
  * @def LAYOUT_ACTIONS_SEPARATOR_Y
  * @brief Y coordinate for the layout actions separator.
  */
-#define LAYOUT_ACTIONS_SEPARATOR_Y      (400)
+#define LAYOUT_ACTIONS_SEPARATOR_Y      (184)   /* leaves 2 text lines for the actions bar above the overscan line (VISIBLE_AREA_Y1=216) */
 
 /**
  * @def SEEKBAR_HEIGHT
  * @brief Height of the seek bar (pixels).
  */
-#define SEEKBAR_HEIGHT                  (24)
+#define SEEKBAR_HEIGHT                  (14)
 /**
  * @def SEEKBAR_WIDTH
  * @brief Width of the seek bar (pixels).
@@ -111,7 +123,7 @@
  * @def SEEKBAR_Y
  * @brief Y coordinate of the seek bar.
  */
-#define SEEKBAR_Y                       (VISIBLE_AREA_Y1 - SEEKBAR_HEIGHT - 80)
+#define SEEKBAR_Y                       (VISIBLE_AREA_Y1 - SEEKBAR_HEIGHT - 40)
 
 /**
  * @def LOADER_WIDTH
@@ -122,7 +134,7 @@
  * @def LOADER_HEIGHT
  * @brief Height of the loader bar (pixels).
  */
-#define LOADER_HEIGHT                   (24)
+#define LOADER_HEIGHT                   (14)
 /**
  * @def LOADER_X
  * @brief X coordinate of the loader bar.
@@ -143,7 +155,7 @@
  * @def MESSAGEBOX_MARGIN
  * @brief Margin around a message box (pixels).
  */
-#define MESSAGEBOX_MARGIN               (32)
+#define MESSAGEBOX_MARGIN               (16)
 
 /**
  * @def TEXT_MARGIN_HORIZONTAL
@@ -154,7 +166,7 @@
  * @def TEXT_MARGIN_VERTICAL
  * @brief Vertical margin for text (pixels).
  */
-#define TEXT_MARGIN_VERTICAL            (6)
+#define TEXT_MARGIN_VERTICAL            (3)
 /**
  * @def TEXT_OFFSET_VERTICAL
  * @brief Vertical offset for text (pixels).
@@ -208,7 +220,7 @@
  * @def BOXART_Y
  * @brief Y coordinate for boxart image.
  */
-#define BOXART_Y                        (LAYOUT_ACTIONS_SEPARATOR_Y - BOXART_HEIGHT - 24)
+#define BOXART_Y                        (LAYOUT_ACTIONS_SEPARATOR_Y - (BOXART_HEIGHT / 2) - 12)
 /**
  * @def BOXART_X_JP
  * @brief X coordinate for Japanese boxart image.
@@ -218,7 +230,7 @@
  * @def BOXART_Y_JP
  * @brief Y coordinate for Japanese boxart image.
  */
-#define BOXART_Y_JP                     (LAYOUT_ACTIONS_SEPARATOR_Y - BOXART_HEIGHT_MAX - 24)
+#define BOXART_Y_JP                     (LAYOUT_ACTIONS_SEPARATOR_Y - (BOXART_HEIGHT_MAX / 2) - 12)
 
 /**
  * @def BOXART_X_DD
@@ -229,7 +241,7 @@
  * @def BOXART_Y_DD
  * @brief Y coordinate for 64DD boxart image.
  */
-#define BOXART_Y_DD                     (LAYOUT_ACTIONS_SEPARATOR_Y - BOXART_HEIGHT_DD - 24)
+#define BOXART_Y_DD                     (LAYOUT_ACTIONS_SEPARATOR_Y - (BOXART_HEIGHT_DD / 2) - 12)
 
 /**
  * @def LIST_SCROLLBAR_WIDTH
@@ -256,7 +268,7 @@
  * @def LIST_ENTRIES
  * @brief Maximum number of file list entries.
  */
-#define LIST_ENTRIES                    (19)
+#define LIST_ENTRIES                    (9)
 /**
  * @def FILE_LIST_PATH_H
  * @brief Height (pixels) reserved for the path breadcrumb header above the file list.
@@ -266,7 +278,7 @@
  * @def FILE_LIST_ENTRIES
  * @brief Rows shown in the frameless, tab-less Files browser.
  */
-#define FILE_LIST_ENTRIES               (19)
+#define FILE_LIST_ENTRIES               (9)
 /**
  * @def FILE_LIST_TOP_Y
  * @brief Y origin of the frameless Files list — leaves room for the path header.

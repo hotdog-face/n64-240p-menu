@@ -98,10 +98,10 @@ void ui_components_cart_placeholder_draw (int x0, int y0, int x1, int y1) {
     /* Aspect-fit the cart photo into the box (92% to leave a little breathing room). */
     int bw = x1 - x0, bh = y1 - y0;
     float sx = (bw * 0.92f) / cart_ph_surf.width;
-    float sy = (bh * 0.92f) / cart_ph_surf.height;
+    float sy = (bh * 2 * 0.92f) / cart_ph_surf.height;   /* 240p: height counts double */
     float scale = (sx < sy) ? sx : sy;
     int draw_w = (int)(cart_ph_surf.width  * scale);
-    int draw_h = (int)(cart_ph_surf.height * scale);
+    int draw_h = (int)(cart_ph_surf.height * scale / 2);
     int dx = x0 + (bw - draw_w) / 2;
     int dy = y0 + (bh - draw_h) / 2;
     rdpq_mode_push();
@@ -112,7 +112,7 @@ void ui_components_cart_placeholder_draw (int x0, int y0, int x1, int y1) {
            1-bit cut-out. */
         rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
         rdpq_tex_blit(&cart_ph_surf, dx, dy,
-                      &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale });
+                      &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale / 2 });
     rdpq_mode_pop();
 }
 
@@ -127,10 +127,10 @@ void ui_components_disc_placeholder_draw (int x0, int y0, int x1, int y1) {
 
     int bw = x1 - x0, bh = y1 - y0;
     float sx = (bw * 0.92f) / disc_ph_surf.width;
-    float sy = (bh * 0.92f) / disc_ph_surf.height;
+    float sy = (bh * 2 * 0.92f) / disc_ph_surf.height;   /* 240p: height counts double */
     float scale = (sx < sy) ? sx : sy;
     int draw_w = (int)(disc_ph_surf.width  * scale);
-    int draw_h = (int)(disc_ph_surf.height * scale);
+    int draw_h = (int)(disc_ph_surf.height * scale / 2);
     int dx = x0 + (bw - draw_w) / 2;
     int dy = y0 + (bh - draw_h) / 2;
     rdpq_mode_push();
@@ -138,7 +138,7 @@ void ui_components_disc_placeholder_draw (int x0, int y0, int x1, int y1) {
         rdpq_mode_filter(FILTER_BILINEAR);
         rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
         rdpq_tex_blit(&disc_ph_surf, dx, dy,
-                      &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale });
+                      &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale / 2 });
     rdpq_mode_pop();
 }
 
@@ -524,7 +524,17 @@ void ui_components_main_text_draw (menu_font_type_t style, rdpq_align_t align, r
  * @param fmt The format string.
  * @param ... The format arguments.
  */
+/* Opaque band behind the actions bar so hints stay readable over grid/list content
+   that reaches the separator. Near-black to blend with the menu background. */
+static void actions_bar_backdrop_draw (void) {
+    ui_components_box_draw(0, LAYOUT_ACTIONS_SEPARATOR_Y, DISPLAY_WIDTH, DISPLAY_HEIGHT,
+                           RGBA32(0x08, 0x09, 0x14, 0xFF));
+    ui_components_box_draw(0, LAYOUT_ACTIONS_SEPARATOR_Y, DISPLAY_WIDTH,
+                           LAYOUT_ACTIONS_SEPARATOR_Y + 1, RGBA32(0x3A, 0x40, 0x6A, 0xFF));
+}
+
 void ui_components_actions_bar_text_draw (menu_font_type_t style, rdpq_align_t align, rdpq_valign_t valign, char *fmt, ...) {
+    actions_bar_backdrop_draw();
     char buffer[256];
     size_t nbytes = sizeof(buffer);
 
@@ -592,18 +602,21 @@ static void actions_bar_slot_draw (const char *txt, int x, int width, rdpq_align
  * @param r Label for the R slot (right-anchored), e.g. "R: Menu".
  */
 void ui_components_actions_bar_buttons_draw (const char *a, const char *b, const char *s, const char *c, const char *r) {
-    int x0 = VISIBLE_AREA_X0 + TEXT_MARGIN_HORIZONTAL;
-    int w  = VISIBLE_AREA_WIDTH - (TEXT_MARGIN_HORIZONTAL * 2);
-    int q  = w / 4;
+    actions_bar_backdrop_draw();
+    /* Extra inset: the user's CRT crops past VISIBLE_AREA on the right, which
+       ate the tail of the right-aligned slot. 14px each side keeps all five
+       labels on glass. */
+    int x0 = VISIBLE_AREA_X0 + TEXT_MARGIN_HORIZONTAL + 14;
+    int w  = VISIBLE_AREA_WIDTH - (TEXT_MARGIN_HORIZONTAL * 2) - 28;
+    int q  = w / 5;
 
-    /* A anchored left, R anchored right (each given the full width to align in). */
-    actions_bar_slot_draw(a, x0, w, ALIGN_LEFT);
-    actions_bar_slot_draw(r, x0, w, ALIGN_RIGHT);
-
-    /* B/S/C centered on the 1/4, 2/4, 3/4 slots (box of width w/2 centered on slot). */
-    actions_bar_slot_draw(b, x0,         2 * q, ALIGN_CENTER);
-    actions_bar_slot_draw(s, x0 + q,     2 * q, ALIGN_CENTER);
-    actions_bar_slot_draw(c, x0 + 2 * q, 2 * q, ALIGN_CENTER);
+    /* Five EQUAL slots so labels can never overprint each other (the 240p wide
+       font overflowed the old overlapping layout into unreadable glyph soup). */
+    actions_bar_slot_draw(a, x0,         q, ALIGN_LEFT);
+    actions_bar_slot_draw(b, x0 + q,     q, ALIGN_CENTER);
+    actions_bar_slot_draw(s, x0 + 2 * q, q, ALIGN_CENTER);
+    actions_bar_slot_draw(c, x0 + 3 * q, q, ALIGN_CENTER);
+    actions_bar_slot_draw(r, x0 + 4 * q, q, ALIGN_RIGHT);
 }
 
 /**
@@ -618,7 +631,7 @@ void ui_components_tabs_draw(const char **text, int count, int selected, float w
     float starting_x = VISIBLE_AREA_X0;
 
     float x = starting_x;
-    float y = OVERSCAN_HEIGHT;    
+    float y = VISIBLE_AREA_Y0;    
     float height = TAB_HEIGHT;
 
     // first draw the tabs that are not selected

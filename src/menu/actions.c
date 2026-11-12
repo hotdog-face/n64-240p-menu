@@ -27,6 +27,7 @@ static void actions_clear (menu_t *menu) {
     menu->actions.options = false;
     menu->actions.settings = false;
     menu->actions.lz_context = false;
+    menu->actions.alt = false;
 }
 
 static void actions_update_direction (menu_t *menu) {
@@ -114,6 +115,20 @@ static void actions_update_buttons (menu_t *menu) {
         }
     }
 
+    /* v11 DIAGNOSTIC: log raw button words to the SD black box so aftermarket-pad
+       mappings (Brawler64) can be verified. Bounded; removed once mapping confirmed. */
+    if (pressed.raw) {
+        extern void menu_diag_log (const char *fmt, ...);
+        static int diag_presses = 0;
+        if (diag_presses < 80) {
+            diag_presses++;
+            menu_diag_log("btn a=%d b=%d z=%d start=%d L=%d R=%d cu=%d cd=%d cl=%d cr=%d du=%d dd=%d dl=%d dr=%d\n",
+                pressed.a, pressed.b, pressed.z, pressed.start, pressed.l, pressed.r,
+                pressed.c_up, pressed.c_down, pressed.c_left, pressed.c_right,
+                pressed.d_up, pressed.d_down, pressed.d_left, pressed.d_right);
+        }
+    }
+
     if (pressed.a) {
         menu->actions.enter = true;
     } else if (pressed.b) {
@@ -122,8 +137,10 @@ static void actions_update_buttons (menu_t *menu) {
         menu->actions.options = true;
     } else if (pressed.start) {
         menu->actions.settings = true;
-    } else if (pressed.l || pressed.z) {
+    } else if (pressed.z) {
         menu->actions.lz_context = true;
+    } else if (pressed.l) {
+        menu->actions.alt = true;
     }
 }
 

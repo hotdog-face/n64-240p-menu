@@ -30,6 +30,7 @@ typedef enum {
     IMAGE_GAMEPAK_3D,      /**< 3D-rendered cartridge */
     IMAGE_LOGO,            /**< Game logo */
     IMAGE_THUMBNAIL,       /**< File image thumbnail */
+    IMAGE_SCREENSHOT,      /**< In-game screenshot */
     IMAGE_TYPE_END         /**< List end marker */
 } file_image_type_t;
 
@@ -349,6 +350,16 @@ int ui_components_boxart_alpha_threshold(const component_boxart_t *b);
  * @return The matching file_image_type_t.
  */
 file_image_type_t ui_components_boxart_view_to_type(int view);
+
+/**
+ * @brief True if any cover art exists for the given 4-char game code (any region).
+ */
+bool ui_components_boxart_exists(const char *game_code);
+
+/**
+ * @brief Number of art directories found on the SD card (diagnostic; -1 never scanned).
+ */
+int ui_components_boxart_index_count(void);
 
 /**
  * @brief Initialize the box art component.

@@ -84,12 +84,17 @@ static void draw (menu_t *menu, surface_t *d) {
     } else {
         rdpq_attach_clear(d, NULL);
 
+        /* 240p: decode target is full 640x480 square-pixel space; draw at half
+           vertical scale so photos keep their proportions on screen. */
+        int draw_h = image->height / 2;
         uint16_t x = (d->width / 2) - (image->width / 2);
-        uint16_t y = (d->height / 2) - (image->height / 2);
+        uint16_t y = (d->height / 2) - (draw_h / 2);
 
         rdpq_mode_push();
-            rdpq_set_mode_copy(false);
-            rdpq_tex_blit(image, x, y, NULL);
+            rdpq_set_mode_standard();
+            rdpq_mode_filter(FILTER_BILINEAR);
+            rdpq_tex_blit(image, x, y,
+                &(rdpq_blitparms_t){ .scale_x = 1.0f, .scale_y = 0.5f });
         rdpq_mode_pop();
 
         if (show_message) {

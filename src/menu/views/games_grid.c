@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,12 +30,12 @@
    character), so it is known synchronously — no need to wait for the PNG to
    decode, and the layout never reflows once a cover loads. */
 #define G_PADX              8
-#define G_PADY              8
+#define G_PADY              4
 #define G_GAP               6
-#define LAND_W              104     /* landscape cover cell (≈158:112) */
-#define LAND_H              74
+#define LAND_W              104     /* landscape cover cell; heights are half the 480-era values (240p double-tall pixels), widths unchanged */
+#define LAND_H              37
 #define PORT_W              80      /* Japanese vertical cover cell (taller, narrower) */
-#define PORT_H              112
+#define PORT_H              56
 
 /* ---------- Inspect popup ---------- */
 /* 2+2 inspect layout: smaller frame; top band = art | description (with a
@@ -42,14 +43,14 @@
    strip split into two columns (Name/Developer under the art, Date/Region under the
    description). Dimensions are deliberately easy to fine-tune -- they only feed draw_inspect. */
 #define INSPECT_W           316
-#define INSPECT_H           237    /* 4:3 popup (316:237 = 4:3), shrunk ~1/3 diagonally from
+#define INSPECT_H           118    /* 4:3 popup (316:237 = 4:3), shrunk ~1/3 diagonally from
                                       472x354 per request. Still centred in the 576x432 area. */
 #define INSPECT_PAD         10
 #define INSPECT_CENTER_X    ((VISIBLE_AREA_X0 + VISIBLE_AREA_X1) / 2)
 #define INSPECT_CENTER_Y    ((VISIBLE_AREA_Y0 + VISIBLE_AREA_Y1) / 2)
 #define INSPECT_LEFT_W      120          /* left column width (art + left metadata); scaled for the smaller 4:3 popup */
 #define INSPECT_BOXART_W    INSPECT_LEFT_W
-#define INSPECT_BOXART_H    160          /* top band = art height = description band height */
+#define INSPECT_BOXART_H    80           /* top band = art height = description band height */
 /* Rainbow glow layers (px outside dialog edge) */
 #define GLOW_OUTER          4
 #define GLOW_INNER          2
@@ -69,7 +70,7 @@
 #define TILE_AREA_Y0        (GRID_Y0 + G_PADY)
 /* Remove-favorite confirmation popup (centered over the inspect dialog) */
 #define CONFIRM_W           324
-#define CONFIRM_H           80
+#define CONFIRM_H           48
 
 /* ---------- Per-slot data ---------- */
 typedef struct {
@@ -86,6 +87,7 @@ typedef struct {
     char destination_code;
     bool is_disk;           /* 64DD disk favorite -> no-art fallback uses the disc placeholder */
     int8_t special;         /* game_special.h table index (filename-keyed), or -1 = none */
+    int8_t has_save;        /* -1 unknown, 0 none, 1 has a saves/ folder (carousel badge) */
 } grid_entry_t;
 
 /* Persistent caches across row changes — indexed by fav_index */
@@ -106,6 +108,9 @@ static int  row_first[FAVORITES_COUNT + 1]; /* first favorite index of each row 
 static int  total_rows = 0;
 
 static void gm_invalidate_one_art(int fav_i, bool keep_info);   /* fwd decl (defined later) */
+
+static bool  carousel_mode = true;   /* 50/50 carousel layout (top covers / bottom info) */
+static float car_pos = 0.0f;         /* carousel scroll position (animated toward sel_fav) */
 
 static int  scroll_row = 0;     /* first visible flow row */
 static int  sel_fav    = 0;     /* selected favorite (index into fav order) */
@@ -151,6 +156,8 @@ static bool         splash_shown        = false; /* true after first display; ne
    with staggered row phases so the decode load never spikes. */
 static bool     ss_active       = false;
 static uint32_t ss_idle_last_ms = 0;   /* wall-clock ms of last input (0 = uninitialized) */
+#define SS_BLACKOUT_MS (30u * 60u * 1000u)   /* marquee runs 30 min, then full black (CRT burn-in safety) */
+static uint32_t ss_started_ms   = 0;   /* when the marquee engaged (drives stage-2 blackout) */
 static int      ss_saved_sel    = -1;  /* cursor saved on entry (restored on wake) */
 static int      ss_saved_scroll = 0;
 static uint32_t ss_lr_start_ms  = 0;   /* wall-clock ms the L+R hold began (0 = not holding) */
@@ -172,8 +179,8 @@ static uint32_t ss_idle_timeout_ms(menu_t *menu) {
                                   lever: 3 rows of large tiles (~21) fill reliably where 5-6 small rows
                                   (55+) starved and blanked out. ~152x160 -> ceil(640/152)=5 cols + 2
                                   buffer = 7 per row. */
-#define SS_CELL_H         160
-#define SS_MAX_ROWS         3   /* 3 big rows fill the 480 height (3*160 = 480), well within RAM */
+#define SS_CELL_H         80 
+#define SS_MAX_ROWS         3   /* 3 big rows fill the 240 height (3*80 = 240), well within RAM */
 #define SS_MAX_TILES       24   /* hard cap on concurrent marquee covers (3 rows * 7 = 21 + slack). Far
                                    below the old 55 -- the art_can_fit() probe makes any overflow a blank
                                    tile not a crash, but at this count it simply fills. */
@@ -258,7 +265,7 @@ static int  hist_n        = 0;
 static int  hist_b_hold   = 0;
 static bool gm_fav_dirty  = false;  /* a History fav/unfav changed bookkeeping; the grid re-flow is
                                        deferred until the overlays close (no live churn behind them) */
-#define GM_HIST_VIS 12
+#define GM_HIST_VIS 6
 
 /* Forward declarations for action functions referenced in context menus */
 static void gm_launch(menu_t *menu, void *arg);
@@ -561,6 +568,100 @@ static void ensure_visible(void) {
 }
 
 /* ------------------------------------------------------------------ */
+/* -- Mood shelves ---------------------------------------------------------
+   Curated overlapping playlists over the favorites. Membership is by
+   case-insensitive FILENAME substring (game codes aren't unique: three
+   favorites share NSME, three share CFZE). C-up/down cycles shelves in the
+   carousel; "All" is always shelf 0 and never filters. */
+static const char *const SHELF_PARTY[] = {
+    "Mario Party 2", "Mario Party 3", "Super Smash", "Smash_Remix", "Mario Kart",
+    "Amped_Up", "Diddy Kong", "Bomberman 64", "GoldenEye", "Perfect Dark",
+    "NFL Blitz", "NBA Hangtime", "Micro Machines", "Snowboard Kids", "Mario Tennis",
+    "Dr. Mario", "Pokemon Puzzle", "Bust-A-Move", "Killer Instinct", "Mortal Kombat",
+    "WWF", "Virtual Pro Wrestling", "Magical Tetris", "New Tetris", "Puyo",
+    "Rakugakids", "Wayne Gretzky", "International Superstar", "Ken Griffey",
+    "Fighters Destiny", "Mickey's Speedway", "Pokemon Stadium",
+};
+static const char *const SHELF_RACING[] = {
+    "Mario Kart", "Amped_Up", "Diddy Kong", "Beetle", "Cruis'n", "Excitebike",
+    "F-Zero", "Hydro", "Mickey's Speedway", "Micro Machines", "RR64", "Rush 2",
+    "San Francisco Rush", "Episode I - Racer", "Stunt Racer", "Top Gear",
+    "Wave Race", "Wipeout", "World Driver",
+};
+static const char *const SHELF_ACTION[] = {
+    "GoldenEye", "Perfect Dark", "Doom", "Quake", "Turok", "Forsaken",
+    "Jet Force", "Star Fox", "Rogue Squadron", "Shadows of the Empire",
+    "Battle for Naboo", "Shadow Man", "WinBack", "Sin And Punishment",
+    "Blast Corps", "Body Harvest", "StarCraft",
+};
+static const char *const SHELF_ADVENTURE[] = {
+    "Zelda", "Banjo", "Super Mario 64", "SM64", "Star Road", "Donkey Kong 64",
+    "Conker", "Paper Mario", "Ogre Battle", "Goemon", "Mischief", "Rocket - Robot",
+    "Silicon Valley", "Rayman", "Glover", "Chameleon", "Custom Robo", "Shiren",
+    "Bomberman Hero", "Kirby", "Yoshi", "Animal Forest", "Harvest Moon",
+};
+static const char *const SHELF_SPORTS[] = {
+    "1080", "Tony Hawk", "Mario Golf", "Mario Tennis", "International Superstar",
+    "Wayne Gretzky", "Ken Griffey", "NFL Blitz", "NBA Hangtime", "Excitebike",
+    "Snowboard Kids", "In-Fisherman", "Wave Race", "WWF", "Virtual Pro Wrestling",
+    "Pilotwings",
+};
+static const char *const SHELF_CHILL[] = {
+    "Animal Forest", "Harvest Moon", "Pokemon Snap", "In-Fisherman", "Densha",
+    "Tetrisphere", "Wetrix", "Magical Tetris", "New Tetris", "Dr. Mario", "Puyo",
+    "Pokemon Puzzle", "Rakugakids", "Pilotwings", "Yoshi", "Kirby", "Glover",
+    "Bust-A-Move",
+};
+/* Homebrew/hacks/translations all live under these two folders on the card, and the
+   retail library lives elsewhere -- so this shelf matches on the PATH (on_path=1), not
+   the filename, and captures the whole set with no per-title upkeep. */
+static const char *const SHELF_HOMEBREW[] = { "/00_playing/", "/Extras/" };
+/* on_path: 0 = match the filename basename against keys; 1 = match the full path. */
+typedef struct { const char *name; const char *const *keys; int nkeys; int on_path; } shelf_t;
+#define SHELF_N(a) (int)(sizeof(a) / sizeof((a)[0]))
+static const shelf_t shelves[] = {
+    { "All",       NULL,             0,                         0 },
+    { "Homebrew",  SHELF_HOMEBREW,   SHELF_N(SHELF_HOMEBREW),   1 },
+    { "Party",     SHELF_PARTY,      SHELF_N(SHELF_PARTY),      0 },
+    { "Racing",    SHELF_RACING,     SHELF_N(SHELF_RACING),     0 },
+    { "Action",    SHELF_ACTION,     SHELF_N(SHELF_ACTION),     0 },
+    { "Adventure", SHELF_ADVENTURE,  SHELF_N(SHELF_ADVENTURE),  0 },
+    { "Sports",    SHELF_SPORTS,     SHELF_N(SHELF_SPORTS),     0 },
+    { "Chill",     SHELF_CHILL,      SHELF_N(SHELF_CHILL),      0 },
+};
+#define SHELF_COUNT (int)(sizeof(shelves) / sizeof(shelves[0]))
+static int active_shelf = 0;
+
+/* Case-insensitive substring (newlib has no strcasestr). */
+static bool ci_contains (const char *hay, const char *needle) {
+    if (!hay || !needle || !*needle) return false;
+    size_t nl = strlen(needle);
+    for (; *hay; hay++) {
+        size_t i = 0;
+        while (i < nl && hay[i] && tolower((unsigned char)hay[i]) == tolower((unsigned char)needle[i])) i++;
+        if (i == nl) return true;
+    }
+    return false;
+}
+
+static bool shelf_match (menu_t *menu, int fav_i) {
+    if (active_shelf <= 0) return true;
+    const shelf_t *sh = &shelves[active_shelf];
+    path_t *pp = menu->bookkeeping.favorite_items[fav_i].primary_path;
+    if (!pp) return false;
+    const char *p = path_get(pp);
+    if (!p) return false;
+    const char *hay = p;                 /* on_path: whole path (folder shelves) */
+    if (!sh->on_path) {                  /* else: filename basename (keyword shelves) */
+        const char *slash = strrchr(p, '/');
+        hay = slash ? slash + 1 : p;
+    }
+    for (int k = 0; k < sh->nkeys; k++) {
+        if (ci_contains(hay, sh->keys[k])) return true;
+    }
+    return false;
+}
+
 static void rebuild_fav_list(menu_t *menu) {
     fav_count = 0;
     for (int i = 0; i < FAVORITES_COUNT; i++) {
@@ -568,6 +669,11 @@ static void rebuild_fav_list(menu_t *menu) {
            pairs are type DISK) -- only skip empty slots. The grid pipeline handles disks
            (load_rom_info_into DISK branch, JP orientation, launch routing). */
         if (menu->bookkeeping.favorite_items[i].bookkeeping_type != BOOKKEEPING_TYPE_EMPTY) {
+            /* Full-grid mode: a game with no cover art anywhere doesn't get a tile —
+               text-placeholder tiles broke the wall-of-covers look. Artless games stay
+               launchable from the file browser. */
+            if (!ui_components_boxart_exists(menu->bookkeeping.favorite_items[i].game_code)) continue;
+            if (!shelf_match(menu, i)) continue;
             fav_indices[fav_count++] = i;
         }
     }
@@ -710,6 +816,7 @@ static void load_rom_info_into(grid_entry_t *e, int fav_i, menu_t *menu) {
     bookkeeping_item_t *bk = &menu->bookkeeping.favorite_items[fav_i];
     e->is_disk = (bk->bookkeeping_type == BOOKKEEPING_TYPE_DISK);
     e->special = -1;
+    e->has_save = -1;   /* unknown until the carousel badge check runs */
     path_t *p = bk->primary_path;
     if (!p || !path_has_value(p)) return;
 
@@ -960,10 +1067,14 @@ static void maybe_background_load(menu_t *menu) {
             int fav_i = fav_indices[i];
             int d = row_of[i] - sel_row; if (d < 0) d = -d;
             if (total_rows > 0 && (total_rows - d) < d) d = total_rows - d;
+            if (carousel_mode) { d = i - sel_fav; if (d < 0) d = -d; }
             if (boxart_cache[fav_i]) {
                 loaded2++;
                 if (fav_i != sfi && d > far_d) { far_d = d; far_i = fav_i; }
-            } else if (!boxart_cache_attempted[fav_i] && d < near_d) {
+            } else if (!boxart_cache_attempted[fav_i] && d < near_d &&
+                       (!carousel_mode || d <= 8)) {
+                /* Carousel shows +/-3; prefetch only +/-8 so boot doesn't stream
+                   the whole library's covers over slow SD. */
                 near_d = d; near_i = fav_i;
             }
         }
@@ -1086,6 +1197,7 @@ static void cache_compact_after_remove(int fav_i) {
     }
     memset(&fav_entry_cache[FAVORITES_COUNT - 1], 0, sizeof(grid_entry_t));
     fav_entry_cache[FAVORITES_COUNT - 1].special = -1;   /* 0 would false-match the first special edition */
+    fav_entry_cache[FAVORITES_COUNT - 1].has_save = -1;
     boxart_cache[FAVORITES_COUNT - 1]           = NULL;
     boxart_cache_attempted[FAVORITES_COUNT - 1] = false;
 }
@@ -1140,6 +1252,25 @@ static void refresh_favorites(menu_t *menu) {
     ensure_visible();
 }
 
+/* Cycle to the next/previous mood shelf. Selection follows the current game
+   into the new shelf when it's a member; otherwise lands on the first slot. */
+static void shelf_cycle(menu_t *menu, int dir) {
+    int keep = (fav_count > 0) ? fav_indices[sel_fav] : -1;
+    active_shelf = (active_shelf + dir + SHELF_COUNT) % SHELF_COUNT;
+    refresh_favorites(menu);
+    if (fav_count == 0) {           /* never strand the user on an empty shelf */
+        active_shelf = 0;
+        refresh_favorites(menu);
+    }
+    sel_fav = 0;
+    for (int gi = 0; gi < fav_count; gi++) {
+        if (fav_indices[gi] == keep) { sel_fav = gi; break; }
+    }
+    car_pos = (float)sel_fav;       /* hard cut, no cross-shelf scroll sweep */
+    ensure_visible();
+    sound_play_effect(SFX_SETTING);
+}
+
 /* ------------------------------------------------------------------ */
 /* anim_f 0.0=not selected, 1.0=fully selected — scales size and glow.
    The cell already matches the cover's orientation, so the rainbow rim hugs
@@ -1174,11 +1305,12 @@ static void draw_tile(int gi, int cx, int cy, int cw, int ch, float anim_f, bool
     int inner_h = y1 - y0;
 
     if (b && !b->loading && b->image) {
+        /* 240p: fit in square-pixel space (cell height counts double), draw at half Y. */
         float sx = (float)inner_w / b->image->width;
-        float sy = (float)inner_h / b->image->height;
+        float sy = (float)(inner_h * 2) / b->image->height;
         float scale = (sx < sy) ? sx : sy;
         int draw_w = (int)(b->image->width  * scale);
-        int draw_h = (int)(b->image->height * scale);
+        int draw_h = (int)(b->image->height * scale / 2);
         int off_x  = (inner_w - draw_w) / 2;
         int off_y  = (inner_h - draw_h) / 2;
 
@@ -1187,7 +1319,7 @@ static void draw_tile(int gi, int cx, int cy, int cw, int ch, float anim_f, bool
             rdpq_mode_filter(FILTER_BILINEAR);
             rdpq_mode_alphacompare(ui_components_boxart_alpha_threshold(b));   /* higher for N64 3D carts */
             rdpq_tex_blit(b->image, x0 + off_x, y0 + off_y,
-                          &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale });
+                          &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale / 2 });
         rdpq_mode_pop();
     } else {
         /* No art: show the display name — prefer the looked-up name (meta_name:
@@ -1218,12 +1350,9 @@ static void draw_tile(int gi, int cx, int cy, int cw, int ch, float anim_f, bool
                 x0, y0,
                 name, tlen
             );
-        } else if (fav_entry_cache[fav_i].is_disk) {
-            ui_components_disc_placeholder_draw(x0, y0, x1, y1);
         } else {
-            /* Name not resolved yet (no art, no code/DB hit): a grey cart
-               placeholder reads better than a pure-black tile. */
-            ui_components_cart_placeholder_draw(x0, y0, x1, y1);
+            /* Name not resolved yet: neutral loading panel (cartridge imagery retired). */
+            ui_components_box_draw(x0, y0, x1, y1, RGBA32(0x10, 0x12, 0x24, 0xFF));
         }
     }
 }
@@ -1377,11 +1506,12 @@ static void draw_inspect(menu_t *menu) {
     gm_load_inspect_boxart(menu, fav_i);
     component_boxart_t *b = insp_boxart;
     if (b && !b->loading && b->image) {
+        /* 240p anisotropic fit (see grid cell draw) */
         float sx = (float)INSPECT_BOXART_W / b->image->width;
-        float sy = (float)INSPECT_BOXART_H / b->image->height;
+        float sy = (float)(INSPECT_BOXART_H * 2) / b->image->height;
         float scale = (sx < sy) ? sx : sy;
         int draw_w = (int)(b->image->width  * scale);
-        int draw_h = (int)(b->image->height * scale);
+        int draw_h = (int)(b->image->height * scale / 2);
         int off_x  = (INSPECT_BOXART_W - draw_w) / 2;
         int off_y  = (INSPECT_BOXART_H - draw_h) / 2;
         rdpq_mode_push();
@@ -1389,7 +1519,7 @@ static void draw_inspect(menu_t *menu) {
             rdpq_mode_filter(FILTER_BILINEAR);
             rdpq_mode_alphacompare(ui_components_boxart_alpha_threshold(b));   /* higher for N64 3D carts */
             rdpq_tex_blit(b->image, art_x + off_x, art_y + off_y,
-                          &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale });
+                          &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale / 2 });
         rdpq_mode_pop();
     } else if (b && b->loading) {
         ui_components_box_draw(art_x, art_y,
@@ -1505,24 +1635,37 @@ static void draw_inspect(menu_t *menu) {
         if (inspect_logo_fav != fav_i) {
             if (inspect_logo) { sprite_free(inspect_logo); inspect_logo = NULL; }
             char lp[64];
-            snprintf(lp, sizeof(lp), "rom:/boxart/%c%c%c%c/logo.sprite",
+            snprintf(lp, sizeof(lp), "sd:/menu/boxart/%c/%c%c%c%c/logo.sprite",
+                     e->game_code[1],
                      e->game_code[0], e->game_code[1], e->game_code[2], e->game_code[3]);
             FILE *lf = fopen(lp, "rb");
-            if (lf) { fclose(lf); inspect_logo = sprite_load(lp); }
+            if (lf) {
+                fseek(lf, 0, SEEK_END);
+                int lsz = (int)ftell(lf);
+                rewind(lf);
+                void *lbuf = asset_loadf(lf, &lsz);
+                fclose(lf);
+                if (lbuf && lsz > 0) {
+                    inspect_logo = sprite_load_buf(lbuf, lsz);
+                    if (inspect_logo) inspect_logo->flags |= SPRITE_FLAGS_OWNEDBUFFER;
+                    else free(lbuf);
+                }
+            }
             inspect_logo_fav = fav_i;
         }
         if (inspect_logo) {
             surface_t s = sprite_get_pixels(inspect_logo);
-            float sx = (float)right_w / s.width, sy = (float)right_h / s.height;
+            /* 240p anisotropic fit (see grid cell draw) */
+            float sx = (float)right_w / s.width, sy = (float)(right_h * 2) / s.height;
             float scale = sx < sy ? sx : sy;
             if (scale > 1.0f) scale = 1.0f;
-            int dw = (int)(s.width * scale), dh = (int)(s.height * scale);
+            int dw = (int)(s.width * scale), dh = (int)(s.height * scale / 2);
             int lx = right_x + (right_w - dw) / 2, ly = right_y + (right_h - dh) / 2;
             rdpq_mode_push();
                 rdpq_set_mode_standard();
                 rdpq_mode_filter(FILTER_BILINEAR);
                 rdpq_mode_alphacompare(128);   /* logos: crop the soft AA fringe (cleaner edge) */
-                rdpq_tex_blit(&s, lx, ly, &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale });
+                rdpq_tex_blit(&s, lx, ly, &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale / 2 });
             rdpq_mode_pop();
         } else {
             rdpq_text_print(
@@ -1706,8 +1849,17 @@ static void launch_favorite(menu_t *menu, int fav_i, bool direct) {
    Grid More menu helpers and action implementations
    ==================================================================== */
 
+/* Cart art retired as a view option (kept only as a low-priority load fallback):
+   cycling skips over the two cart views. */
+static grid_image_view_t gm_next_view(grid_image_view_t v) {
+    do {
+        v = (grid_image_view_t)((v + 1) % GRID_IMAGE_COUNT);
+    } while (v == GRID_IMAGE_CART_FRONT || v == GRID_IMAGE_CART_3D);
+    return v;
+}
+
 static const char *gm_view_name(grid_image_view_t v) {
-    static const char *names[] = { "Front", "Back", "3D Box", "Cart", "3D Cart", "Logo" };
+    static const char *names[] = { "Front", "Back", "3D Box", "Cart", "3D Cart", "Logo", "Screenshot" };
     return (v >= 0 && v < GRID_IMAGE_COUNT) ? names[v] : "?";
 }
 
@@ -2202,7 +2354,7 @@ static void gm_gs_cycle_grid(menu_t *menu, void *arg) {
     gm_gs_row = (int)(intptr_t)arg;
     gm_gs_fired = true;
     menu->settings.image_view_grid =
-        (grid_image_view_t)((menu->settings.image_view_grid + 1) % GRID_IMAGE_COUNT);
+        gm_next_view(menu->settings.image_view_grid);
     settings_save(&menu->settings);
     gm_gs_update_labels(menu);
     gv_is_box = is_box_view(menu->settings.image_view_grid);  /* JP portrait only for box views */
@@ -2212,7 +2364,7 @@ static void gm_gs_cycle_inspect(menu_t *menu, void *arg) {
     gm_gs_row = (int)(intptr_t)arg;
     gm_gs_fired = true;
     menu->settings.image_view_inspect =
-        (grid_image_view_t)((menu->settings.image_view_inspect + 1) % GRID_IMAGE_COUNT);
+        gm_next_view(menu->settings.image_view_inspect);
     settings_save(&menu->settings);
     insp_boxart_fav = -1;   /* inspect cover must reload with the new view */
     gm_gs_update_labels(menu);
@@ -2221,7 +2373,7 @@ static void gm_gs_cycle_load(menu_t *menu, void *arg) {
     gm_gs_row = (int)(intptr_t)arg;
     gm_gs_fired = true;
     menu->settings.image_view_load =
-        (grid_image_view_t)((menu->settings.image_view_load + 1) % GRID_IMAGE_COUNT);
+        gm_next_view(menu->settings.image_view_load);
     settings_save(&menu->settings);
     gm_gs_update_labels(menu);
 }
@@ -2348,7 +2500,7 @@ static bool gm_md_rom_exists(const char *code, const char *name) {
     order[no++] = code[3];
     for (size_t i = 0; i < sizeof(regions); i++) if (regions[i] != code[3]) order[no++] = regions[i];
     for (int i = 0; i < no; i++) {
-        snprintf(p, sizeof(p), "rom:/boxart/%c%c%c%c/%s.sprite", code[0], code[1], code[2], order[i], name);
+        snprintf(p, sizeof(p), "sd:/menu/boxart/%c/%c%c%c%c/%s.sprite", code[1], code[0], code[1], code[2], order[i], name);
         FILE *f = fopen(p, "rb");
         if (f) { fclose(f); return true; }
     }
@@ -2605,6 +2757,7 @@ static void ss_activate(menu_t *menu) {
     ss_saved_sel    = sel_fav;
     ss_saved_scroll = scroll_row;
     ss_active       = true;
+    ss_started_ms   = (uint32_t)get_ticks_ms();
     ss_wake_lock    = 12;                       /* ~0.2 s so the trigger buttons don't wake it */
     ss_lr_start_ms  = 0;
     ss_rng         ^= ((uint32_t)get_ticks() | 1u);   /* seed */
@@ -2772,8 +2925,11 @@ static void gs_popup_draw(void);
 static void process(menu_t *menu) {
     compute_flow();
 
-    /* Inspect closed since last frame -> release its dedicated cover (reclaim memory). */
-    if (!show_inspect && insp_boxart) {
+    /* Inspect closed since last frame -> release its dedicated cover (reclaim memory).
+       NOT in carousel mode: there the inspect slot IS the bottom-panel screenshot,
+       owned by the settle-load in draw_carousel (this line was freeing it every
+       frame — screenshot popped in for a beat and vanished). */
+    if (!show_inspect && !carousel_mode && insp_boxart) {
         gm_free_inspect_boxart();
     }
 
@@ -3163,7 +3319,30 @@ static void process(menu_t *menu) {
         bh = joypad_get_buttons_held(port);
         if (bh.raw) break;
     }
-    if (bh.b && !menu->settings.always_sort_az) {
+    /* Carousel: B is "go to file browser" (matches the greeting's instructions);
+       hold-to-move only exists in the tile grid. L = Surprise Me (random game). */
+    if (carousel_mode) {
+        if (menu->actions.back) {
+            menu->next_mode = MENU_MODE_BROWSER;
+            sound_play_effect(SFX_CURSOR);
+            return;
+        }
+        if (menu->actions.alt) {          /* L: next shelf (playtest: L is the
+                                              shelf key in the user's hands) */
+            shelf_cycle(menu, 1);
+            return;
+        }
+        if (menu->actions.lz_context && fav_count > 1) {   /* Z: surprise me */
+            uint32_t r = (uint32_t)get_ticks();
+            r ^= r >> 13; r *= 0x5bd1e995u; r ^= r >> 15;
+            int pick = (int)(r % (uint32_t)fav_count);
+            if (pick == sel_fav) pick = (pick + 1) % fav_count;
+            sel_fav = pick;
+            ensure_visible();
+            sound_play_effect(SFX_GRID_MOVE);
+            return;
+        }
+    } else if (bh.b && !menu->settings.always_sort_az) {
         b_held_frames++;
         if (b_held_frames == MOVE_HOLD_FRAMES) {
             move_mode     = true;
@@ -3182,16 +3361,24 @@ static void process(menu_t *menu) {
         sound_play_effect(SFX_LAUNCH);
         launch_favorite(menu, fav_indices[sel_fav], true);
     } else if (menu->actions.enter) {
-        show_inspect          = true;
-        show_confirm_remove   = false;
-        desc_scroll           = 0;
-        sound_play_effect(SFX_GRID_ENTER);
+        if (carousel_mode) {
+            sound_play_effect(SFX_LAUNCH);
+            launch_favorite(menu, fav_indices[sel_fav], true);
+        } else {
+            show_inspect          = true;
+            show_confirm_remove   = false;
+            desc_scroll           = 0;
+            sound_play_effect(SFX_GRID_ENTER);
+        }
     } else if (menu->actions.options) {
         /* R: open the universal More menu as an overlay on the grid */
         if (fav_count > 0) {
             sound_play_effect(SFX_SETTING);
             gm_open(menu, false);
         }
+    } else if (carousel_mode && menu->actions.go_fast && (menu->actions.go_up || menu->actions.go_down)) {
+        /* C-up/down: cycle mood shelves (same as L, both directions). */
+        shelf_cycle(menu, menu->actions.go_down ? 1 : -1);
     } else if (menu->actions.go_fast && (menu->actions.go_up || menu->actions.go_down)) {
         /* C-up/down: page scroll by a visible page -- SAME in A-Z and normal modes.
            Clamps to the edge row first; pressing again AT the edge wraps around the grid
@@ -3218,13 +3405,23 @@ static void process(menu_t *menu) {
             if (t != sel_fav) { sel_fav = t; ensure_visible(); sound_play_effect(SFX_GRID_MOVE); }
         }
     } else if (menu->actions.go_up) {
-        int r = row_of[sel_fav] - 1; if (r < 0) r = total_rows - 1;   /* wrap to bottom */
-        int t = nearest_in_row(r, xof[sel_fav] + wof[sel_fav] / 2);
-        if (t >= 0) { sel_fav = t; ensure_visible(); sound_play_effect(SFX_GRID_MOVE); }
+        if (carousel_mode) {
+            sel_fav -= 10; if (sel_fav < 0) sel_fav = 0;
+            ensure_visible(); sound_play_effect(SFX_GRID_MOVE);
+        } else {
+            int r = row_of[sel_fav] - 1; if (r < 0) r = total_rows - 1;   /* wrap to bottom */
+            int t = nearest_in_row(r, xof[sel_fav] + wof[sel_fav] / 2);
+            if (t >= 0) { sel_fav = t; ensure_visible(); sound_play_effect(SFX_GRID_MOVE); }
+        }
     } else if (menu->actions.go_down) {
-        int r = row_of[sel_fav] + 1; if (r >= total_rows) r = 0;      /* wrap to top */
-        int t = nearest_in_row(r, xof[sel_fav] + wof[sel_fav] / 2);
-        if (t >= 0) { sel_fav = t; ensure_visible(); sound_play_effect(SFX_GRID_MOVE); }
+        if (carousel_mode) {
+            sel_fav += 10; if (sel_fav >= fav_count) sel_fav = fav_count - 1;
+            ensure_visible(); sound_play_effect(SFX_GRID_MOVE);
+        } else {
+            int r = row_of[sel_fav] + 1; if (r >= total_rows) r = 0;      /* wrap to top */
+            int t = nearest_in_row(r, xof[sel_fav] + wof[sel_fav] / 2);
+            if (t >= 0) { sel_fav = t; ensure_visible(); sound_play_effect(SFX_GRID_MOVE); }
+        }
     } else if (menu->actions.go_left) {
         /* Past the leftmost tile -> last tile of the row above (wraps first<->last overall). */
         sel_fav = (sel_fav > 0) ? sel_fav - 1 : fav_count - 1;
@@ -3241,6 +3438,12 @@ static void process(menu_t *menu) {
    so it can never perturb the regular path (which only runs while !ss_active). */
 static void draw_screensaver(menu_t *menu) {
     (void)menu;
+    /* Stage 2 tube protection: after the marquee has run SS_BLACKOUT_MS, drop to
+       plain black (any input still wakes via the normal path). */
+    if (ss_started_ms && (uint32_t)get_ticks_ms() - ss_started_ms > SS_BLACKOUT_MS) {
+        rdpq_clear(RGBA32(0, 0, 0, 0xFF));
+        return;
+    }
     int grid_h = ss_rows * SS_CELL_H;
     int y0 = (DISPLAY_HEIGHT - grid_h) / 2;            /* centre; may be slightly negative */
 
@@ -3262,14 +3465,15 @@ static void draw_screensaver(menu_t *menu) {
             int cx = (int)(i * SS_CELL_W - phase) + introx;
             int cell_w = SS_CELL_W - 4, cell_h = SS_CELL_H - 4;
             int cellx = cx + 2, celly = ry + 2;
+            /* 240p anisotropic fit (see grid cell draw) */
             float sx = (float)cell_w / b->image->width;
-            float sy = (float)cell_h / b->image->height;
+            float sy = (float)(cell_h * 2) / b->image->height;
             /* Fit WITHIN the cell (aspect-correct, no crop). Cover-fit hugged the cell but
                mangled transparent/angled art (3D carts, logos); letterbox gaps on black are
                fine, and rdpq_tex_blit tolerates off-screen coords, so no per-cell scissor. */
             float scale = (sx < sy) ? sx : sy;
             int dw = (int)(b->image->width  * scale);
-            int dh = (int)(b->image->height * scale);
+            int dh = (int)(b->image->height * scale / 2);
             int dx = cellx + (cell_w - dw) / 2;
             int dy = celly + (cell_h - dh) / 2;
             rdpq_mode_push();
@@ -3282,7 +3486,7 @@ static void draw_screensaver(menu_t *menu) {
                    user reported only the carts' edges as funky.) */
                 rdpq_mode_alphacompare(128);
                 rdpq_tex_blit(b->image, dx, dy,
-                              &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale });
+                              &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale / 2 });
             rdpq_mode_pop();
         }
     }
@@ -3313,6 +3517,158 @@ void view_grid_release_boxart (void) {
 void view_grid_screensaver_begin (menu_t *menu) { if (!ss_active) ss_activate(menu); }
 void view_grid_screensaver_frame (menu_t *menu) { if (ss_active) { ss_step(menu); draw_screensaver(menu); } }
 void view_grid_screensaver_end   (menu_t *menu) { if (ss_active) ss_deactivate(); }
+
+/* ==================================================================
+   CAROUSEL layout: 50/50 split. Top half = horizontal cover carousel
+   (selection centered, neighbours shrink); bottom half = gameplay
+   screenshot + title + description of the selected game. Reuses the
+   grid's fav list, art cache, draw_tile and the inspect loaders.
+   ================================================================== */
+#define CAR_SPLIT_Y      112                       /* divider between the halves */
+#define CAR_SPACING      128                       /* px between carousel slots */
+#define CAR_CELL_W       118                       /* selected cover cell */
+#define CAR_CELL_H       76
+#define CAR_SHOT_X       32                        /* bottom-left screenshot box */
+#define CAR_SHOT_Y       114
+#define CAR_SHOT_W       200                       /* enlarged (snaps rebaked 240x150) */
+#define CAR_SHOT_H       66
+#define CAR_TEXT_X       (CAR_SHOT_X + CAR_SHOT_W + 12)
+#define CAR_TEXT_W       (VISIBLE_AREA_X1 - CAR_TEXT_X)
+
+
+static void draw_carousel(menu_t *menu) {
+    int sfi = fav_indices[sel_fav];
+
+    /* Smooth scroll toward the selection (snap on big jumps, e.g. A-Z hops). */
+    float dpos = (float)sel_fav - car_pos;
+    if (dpos > 12.0f || dpos < -12.0f) car_pos = (float)sel_fav;
+    else car_pos += dpos * 0.22f;
+
+    /* ---- Top band: the carousel ---- */
+    int band_yc = (VISIBLE_AREA_Y0 + CAR_SPLIT_Y) / 2;
+    rdpq_set_scissor(0, VISIBLE_AREA_Y0, DISPLAY_WIDTH, CAR_SPLIT_Y);
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = sel_fav - 3; i <= sel_fav + 3; i++) {
+            if (i < 0 || i >= fav_count) continue;
+            if ((pass == 0) == (i == sel_fav)) continue;   /* selected drawn last */
+            float d = (float)i - car_pos;
+            float f = 1.0f - 0.30f * (d < 0 ? -d : d);
+            if (f < 0.45f) f = 0.45f;
+            int cw = (int)(CAR_CELL_W * f);
+            int chh = (int)(CAR_CELL_H * f);
+            int cx = DISPLAY_CENTER_X + (int)(d * CAR_SPACING) - cw / 2;
+            draw_tile(i, cx, band_yc - chh / 2, cw, chh,
+                      (i == sel_fav) ? sel_enter_t : 0.0f, false);
+        }
+    }
+    rdpq_set_scissor(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
+
+    /* ---- Divider ---- */
+    ui_components_box_draw(VISIBLE_AREA_X0, CAR_SPLIT_Y, VISIBLE_AREA_X1, CAR_SPLIT_Y + 1,
+                           RGBA32(0x3A, 0x40, 0x6A, 0xFF));
+
+    /* ---- Bottom band: screenshot + title + description of the selection ---- */
+    /* Make sure the ROM info + metadata for the selection are loaded (same pattern
+       as the inspect popup; shares its caches so opening inspect stays free). */
+    if (!fav_entry_cache[sfi].info_loaded) {
+        load_rom_info_into(&fav_entry_cache[sfi], sfi, menu);
+        fav_entry_cache[sfi].info_loaded = true;
+        inspect_fav_i_cached = -1;
+    }
+    grid_entry_t *ec = &fav_entry_cache[sfi];
+    if (sfi != inspect_fav_i_cached) {
+        inspect_fav_i_cached = sfi;
+        inspect_has_meta = gm_meta_lookup(menu, ec->game_code, ec->special, &inspect_meta);
+    }
+    /* SETTLE-DEBOUNCED screenshot load: loading a ~37KB snap on EVERY selection
+       change both stalls scrolling (SD reads block frames) and churns/fragments the
+       heap until art loading dies (the art_can_fit failure mode). While the cursor
+       is moving: no snap I/O at all — covers are already cached, so movement stays
+       instant. Only after the selection RESTS ~0.35s does its screenshot load. */
+    static int settle_sel = -1;
+    static int settle_frames = 0;
+    if (sel_fav != settle_sel) {
+        settle_sel = sel_fav;
+        settle_frames = 0;
+        if (insp_boxart) gm_free_inspect_boxart();   /* release the old snap right away */
+    } else if (settle_frames <= 21) {
+        settle_frames++;
+        if (settle_frames == 21) {
+            gm_load_inspect_boxart(menu, sfi);   /* inspect view type = Screenshot */
+        }
+    }
+
+    /* Screenshot (or placeholder) */
+    component_boxart_t *sb = insp_boxart;
+    if (sb && !sb->loading && sb->image) {
+        float sx = (float)CAR_SHOT_W / sb->image->width;
+        float sy = (float)(CAR_SHOT_H * 2) / sb->image->height;
+        float sc = (sx < sy) ? sx : sy;
+        int dw = (int)(sb->image->width * sc);
+        int dh = (int)(sb->image->height * sc / 2);
+        rdpq_mode_push();
+            rdpq_set_mode_standard();
+            rdpq_mode_filter(FILTER_BILINEAR);
+            rdpq_tex_blit(sb->image,
+                          CAR_SHOT_X + (CAR_SHOT_W - dw) / 2,
+                          CAR_SHOT_Y + (CAR_SHOT_H - dh) / 2,
+                          &(rdpq_blitparms_t){ .scale_x = sc, .scale_y = sc / 2 });
+        rdpq_mode_pop();
+    } else {
+        ui_components_box_draw(CAR_SHOT_X, CAR_SHOT_Y, CAR_SHOT_X + CAR_SHOT_W,
+                               CAR_SHOT_Y + CAR_SHOT_H, RGBA32(0x10, 0x12, 0x24, 0xFF));
+    }
+
+    /* Save badge: does this game have a saves/<stem>.* file? Checked once per
+       game (cached), only after the selection settles (no I/O while scrolling). */
+    if (settle_frames == 21 && ec->has_save < 0) {
+        bookkeeping_item_t *bk = &menu->bookkeeping.favorite_items[sfi];
+        ec->has_save = 0;
+        if (bk->primary_path) {
+            path_t *sp = path_clone(bk->primary_path);
+            path_pop(sp);                       /* game's folder */
+            path_push(sp, "saves");
+            if (directory_exists(path_get(sp))) {
+                ec->has_save = 1;               /* folder exists = something saved nearby */
+            }
+            path_free(sp);
+        }
+    }
+    if (ec->has_save > 0) {
+        rdpq_text_print(
+            &(rdpq_textparms_t){ .style_id = STL_YELLOW, .width = CAR_SHOT_W,
+                                 .align = ALIGN_LEFT },
+            FNT_DEFAULT, CAR_SHOT_X, LAYOUT_ACTIONS_SEPARATOR_Y - 4, "* save data");
+    }
+
+    /* Title: plain text, up to two lines -- box logos are unreadable on CRT,
+       so this is THE title, not a supplement (playtest request). */
+    const char *title = (ec->meta_name[0]) ? ec->meta_name : ec->title;
+    rdpq_text_printn(
+        &(rdpq_textparms_t){ .style_id = STL_DEFAULT, .width = CAR_TEXT_W,
+                             .height = 26, .align = ALIGN_LEFT, .wrap = WRAP_ELLIPSES },
+        FNT_DEFAULT, CAR_TEXT_X, CAR_SHOT_Y + 8, title, strlen(title));
+
+    /* Description */
+    const char *desc = (inspect_has_meta && inspect_meta.description && inspect_meta.description[0])
+                       ? inspect_meta.description : "No description available.";
+    rdpq_text_printn(
+        &(rdpq_textparms_t){ .style_id = STL_GRAY, .width = CAR_TEXT_W,
+                             .height = (LAYOUT_ACTIONS_SEPARATOR_Y - 16) - (CAR_SHOT_Y + 34),
+                             .align = ALIGN_LEFT, .wrap = WRAP_WORD,
+                             .line_spacing = TEXT_LINE_SPACING_ADJUST },
+        FNT_DEFAULT, CAR_TEXT_X, CAR_SHOT_Y + 34, desc, strlen(desc));
+
+    /* Status line: active shelf + position + build version, well inside the
+       safe area (the bottom bar's right slot is cropped on the user's CRT). */
+    char status[48];
+    snprintf(status, sizeof(status), "Shelf: %s (%d/%d)  v25",
+             shelves[active_shelf].name, fav_count ? sel_fav + 1 : 0, fav_count);
+    rdpq_text_print(
+        &(rdpq_textparms_t){ .style_id = STL_YELLOW, .width = CAR_TEXT_W,
+                             .align = ALIGN_LEFT },
+        FNT_DEFAULT, CAR_TEXT_X, LAYOUT_ACTIONS_SEPARATOR_Y - 4, status);
+}
 
 static void draw(menu_t *menu, surface_t *d) {
     rdpq_attach(d, NULL);
@@ -3392,6 +3748,8 @@ static void draw(menu_t *menu, surface_t *d) {
                                      "\n"
                                      "%s^00", rainbow);
         }
+    } else if (carousel_mode && !move_mode) {
+        draw_carousel(menu);
     } else {
         int lastr   = visible_last_row();
         int tile_x0 = GRID_X0;
@@ -3478,25 +3836,30 @@ static void draw(menu_t *menu, surface_t *d) {
             draw_confirm_remove(menu);
         }
     } else if (move_mode) {
-        ui_components_actions_bar_buttons_draw("A: Done", "B: Done", "S: Done", NULL, "R: Unfav (hold)");
+        ui_components_actions_bar_buttons_draw("A Done", "B Done", "S Done", NULL, "R Unfav");
     } else if (fav_count == 0) {
         /* Empty grid: R either imports the /Favorites folder (if one was found) or opens
            the file browser (see process()). */
         if (gs_can_scan) {
             ui_components_actions_bar_buttons_draw(NULL, NULL, "S: Launch", NULL, NULL);
         } else {
-            ui_components_actions_bar_buttons_draw(NULL, NULL, NULL, NULL, "R: File Browser");
+            ui_components_actions_bar_buttons_draw("[v12]", NULL, NULL, NULL, "R Files");
         }
     } else {
         /* Standardized fixed slots: A inspect, B move, S launch, C page, R menu. In A-Z
            mode C does letter jumps ("C: A-Z") and manual Move is disabled (B hidden). */
+        /* Short labels: the wide 240p font overprints neighbouring slots with the
+           full-length 480-era strings. */
         bool az = menu->settings.always_sort_az;
-        ui_components_actions_bar_buttons_draw(
-            "A: Inspect",
-            az ? NULL : "B: Move (hold)",
-            "S: Launch",
-            az ? "C: A-Z" : "C: Page",
-            "R: Menu");
+        if (carousel_mode) {
+            /* A Info retired (A launches now); version lives in the status line. */
+            ui_components_actions_bar_buttons_draw(
+                "A Play", "B Files", "L Shelf", "Z Rand", "R Menu");
+        } else {
+            ui_components_actions_bar_buttons_draw(
+                "A Info", az ? NULL : "B Move", "S Play",
+                az ? "C A-Z" : "C Page", "R Menu");
+        }
     }
 
     /* Splash overlay: shown until the first full page (all visible rows) of boxart
@@ -3731,6 +4094,37 @@ void view_games_grid_init(menu_t *menu) {
     b_held_frames        = 0;
     move_tick            = 0;
     move_r_held          = 0;
+
+    /* First grid entry after boot: land the selection on the LAST-PLAYED game
+       ("it remembers me"). History[0] is the most recent launch; find it among
+       the favorites by path. Later grid entries keep the user's cursor. */
+    static bool landed_on_boot = false;
+    if (carousel_mode && !landed_on_boot) {
+        landed_on_boot = true;
+        int target = -1;
+        /* Priority 1: the pinned 240p Test Suite (code "240P"). The user runs it to
+           calibrate CRTs far more than they play, so easy access wins over last-played. */
+        for (int gi = 0; gi < fav_count; gi++) {
+            const char *gc = menu->bookkeeping.favorite_items[fav_indices[gi]].game_code;
+            if (gc[0]=='2' && gc[1]=='4' && gc[2]=='0' && gc[3]=='P') { target = gi; break; }
+        }
+        /* Priority 2 (fallback): the last-played game ("it remembers me"). */
+        if (target < 0) {
+            bookkeeping_item_t *last = &menu->bookkeeping.history_items[0];
+            if (last->bookkeeping_type != BOOKKEEPING_TYPE_EMPTY && last->primary_path) {
+                for (int gi = 0; gi < fav_count; gi++) {
+                    bookkeeping_item_t *fi = &menu->bookkeeping.favorite_items[fav_indices[gi]];
+                    if (fi->primary_path && path_are_match(last->primary_path, fi->primary_path)) {
+                        target = gi; break;
+                    }
+                }
+            }
+        }
+        if (target >= 0) {
+            sel_fav = target;
+            car_pos = (float)target;   /* no scroll-in animation on boot */
+        }
+    }
     grid_sq              = menu->settings.grid_square_tiles;
     grid_large           = menu->settings.grid_large_tiles;
     gv_is_box            = is_box_view(menu->settings.image_view_grid);

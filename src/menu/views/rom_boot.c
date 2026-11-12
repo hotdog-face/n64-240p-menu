@@ -121,19 +121,20 @@ static void draw (menu_t *menu, surface_t *d, int secs) {
     bool img_ok = img && img->width > 0 && img->height > 0 && img->width <= 1024 && img->height <= 1024;
     if (img_ok) {
         float sx = (float)img_w / img->width;
-        float sy = (float)img_h / img->height;
+        float sy = (float)(img_h * 2) / img->height;   /* 240p: height counts double */
         float scale = sx < sy ? sx : sy;
         int dw = (int)(img->width  * scale);
-        int dh = (int)(img->height * scale);
+        int dh = (int)(img->height * scale / 2);
         rdpq_mode_push();
         rdpq_set_mode_standard();
         rdpq_mode_filter(FILTER_BILINEAR);
         rdpq_mode_alphacompare(ui_components_boxart_alpha_threshold(rb_boxart));   /* higher for N64 3D carts */
         rdpq_tex_blit(img, img_x0 + (img_w - dw) / 2, img_y0 + (img_h - dh) / 2,
-                      &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale });
+                      &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale / 2 });
         rdpq_mode_pop();
     } else {
-        ui_components_cart_placeholder_draw(img_x0, img_y0, img_x1, img_y1);
+        /* Cartridge imagery retired: neutral panel when a game has no art. */
+        ui_components_box_draw(img_x0, img_y0, img_x1, img_y1, RGBA32(0x10, 0x12, 0x24, 0xFF));
     }
 
     ui_components_main_text_draw(STL_DEFAULT, ALIGN_CENTER, VALIGN_BOTTOM,

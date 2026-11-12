@@ -125,7 +125,7 @@ static void draw (menu_t *menu, surface_t *d) {
     int logo_h = cr_logo ? cr_logo->height : 0;
 
     /* Clamp scroll now that the content height is known. */
-    int content_h = logo_h + CR_GAP + text_h;
+    int content_h = logo_h / 2 + CR_GAP + text_h;   /* 240p: logo draws at half height */
     int maxscroll = content_h > ch ? content_h - ch : 0;
     if (cr_scroll < 0)         cr_scroll = 0;
     if (cr_scroll > maxscroll) cr_scroll = maxscroll;
@@ -137,10 +137,11 @@ static void draw (menu_t *menu, surface_t *d) {
         rdpq_mode_push();
             rdpq_set_mode_standard();
             rdpq_mode_filter(FILTER_BILINEAR);
-            rdpq_sprite_blit(cr_logo, DISPLAY_CENTER_X - logo_w / 2, y, NULL);
+            rdpq_sprite_blit(cr_logo, DISPLAY_CENTER_X - logo_w / 2, y,
+                             &(rdpq_blitparms_t){ .scale_x = 1.0f, .scale_y = 0.5f });   /* 240p */
         rdpq_mode_pop();
     }
-    rdpq_paragraph_render(p, cx0, y + logo_h + CR_GAP);
+    rdpq_paragraph_render(p, cx0, y + logo_h / 2 + CR_GAP);
     rdpq_paragraph_free(p);
     rdpq_set_scissor(0, 0, DISPLAY_WIDTH, DISPLAY_HEIGHT);
 

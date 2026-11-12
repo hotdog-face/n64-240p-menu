@@ -118,6 +118,13 @@ void settings_load (settings_t *settings) {
     settings->image_view_grid   = (grid_image_view_t)ini_get_int(ini, "menu", "image_view_grid",    (int)init.image_view_grid);
     settings->image_view_inspect= (grid_image_view_t)ini_get_int(ini, "menu", "image_view_inspect", (int)init.image_view_inspect);
     settings->image_view_load   = (grid_image_view_t)ini_get_int(ini, "menu", "image_view_load",    (int)init.image_view_load);
+    /* Cart art retired as a view option: coerce stale configs to box front. */
+    if (settings->image_view_grid == GRID_IMAGE_CART_FRONT || settings->image_view_grid == GRID_IMAGE_CART_3D)
+        settings->image_view_grid = GRID_IMAGE_BOX_FRONT;
+    if (settings->image_view_inspect == GRID_IMAGE_CART_FRONT || settings->image_view_inspect == GRID_IMAGE_CART_3D)
+        settings->image_view_inspect = GRID_IMAGE_BOX_FRONT;
+    if (settings->image_view_load == GRID_IMAGE_CART_FRONT || settings->image_view_load == GRID_IMAGE_CART_3D)
+        settings->image_view_load = GRID_IMAGE_BOX_FRONT;
     settings->image_region_default = ini_get_int(ini, "menu", "image_region_default", init.image_region_default);
     settings->rom_boot_enabled  = ini_get_bool(ini, "menu", "rom_boot_enabled", init.rom_boot_enabled);
     free(settings->rom_boot_path);

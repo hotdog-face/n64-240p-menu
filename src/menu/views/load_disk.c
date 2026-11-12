@@ -273,9 +273,9 @@ static void draw_progress (float progress) {
     surface_t *img = (boxart && !boxart->loading) ? boxart->image : NULL;
     bool img_ok = img && img->width > 0 && img->height > 0 && img->width <= 1024 && img->height <= 1024;
     if (img_ok) {
-        float sx = (float)img_w / img->width, sy = (float)img_h / img->height;
+        float sx = (float)img_w / img->width, sy = (float)(img_h * 2) / img->height;   /* 240p */
         float scale = sx < sy ? sx : sy;
-        int dw = (int)(img->width * scale), dh = (int)(img->height * scale);
+        int dw = (int)(img->width * scale), dh = (int)(img->height * scale / 2);
         rdpq_mode_push();
         rdpq_set_mode_standard();
         rdpq_mode_filter(FILTER_BILINEAR);
@@ -285,10 +285,10 @@ static void draw_progress (float progress) {
            transparent texels still contribute nothing. Matches the placeholder draw. */
         rdpq_mode_blender(RDPQ_BLENDER_MULTIPLY);
         rdpq_tex_blit(img, img_x0 + (img_w - dw) / 2, img_y0 + (img_h - dh) / 2,
-                      &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale });
+                      &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale / 2 });
         rdpq_mode_pop();
     } else {
-        ui_components_disc_placeholder_draw(img_x0, img_y0, img_x1, img_y1);
+        ui_components_box_draw(img_x0, img_y0, img_x1, img_y1, RGBA32(0x10, 0x12, 0x24, 0xFF));
     }
 
     rdpq_mode_push();

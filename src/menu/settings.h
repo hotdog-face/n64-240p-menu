@@ -18,7 +18,8 @@ typedef enum {
     GRID_IMAGE_CART_FRONT = 3, /**< Cartridge front     */
     GRID_IMAGE_CART_3D    = 4, /**< 3D cartridge render */
     GRID_IMAGE_LOGO       = 5, /**< Game logo           */
-    GRID_IMAGE_COUNT      = 6, /**< Number of view types */
+    GRID_IMAGE_SCREENSHOT = 6, /**< In-game screenshot  */
+    GRID_IMAGE_COUNT      = 7, /**< Number of view types */
 } grid_image_view_t;
 
 /** @brief Idle screensaver on the games grid (random-art marquee). */

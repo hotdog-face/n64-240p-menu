@@ -147,7 +147,7 @@ FILESYSTEM = \
 
 $(MINIZ_OBJS): N64_CFLAGS+=-Wno-unused-function -fcompare-debug-second
 $(SPNG_OBJS): N64_CFLAGS+=-DSPNG_USE_MINIZ -fcompare-debug-second
-$(FILESYSTEM_DIR)/Firple-Bold.font64: MKFONT_FLAGS+=--compress 1 --outline 1 --size 15 --charset $(ASSETS_DIR)/fonts/charset.txt --ellipsis 2026,1
+$(FILESYSTEM_DIR)/Firple-Bold.font64: MKFONT_FLAGS+=--compress 1 --outline 1 --size 9 --charset $(ASSETS_DIR)/fonts/charset.txt --ellipsis 2026,1
 $(FILESYSTEM_DIR)/PixelMplus12-Bold.font64: MKFONT_FLAGS+=--compress 1 --monochrome --outline 1 --size 12 --charset $(ASSETS_DIR)/fonts/charset.txt --ellipsis 2026,1
 $(FILESYSTEM_DIR)/placeholder-cart.sprite: MKSPRITE_FLAGS+=--format RGBA32
 $(FILESYSTEM_DIR)/placeholder-disc.sprite: MKSPRITE_FLAGS+=--format RGBA32

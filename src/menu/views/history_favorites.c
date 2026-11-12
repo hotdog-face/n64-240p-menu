@@ -212,16 +212,17 @@ static void draw_list(menu_t *menu) {
         if (hist_boxarts[bk] && !hist_boxarts[bk]->loading && hist_boxarts[bk]->image) {
             surface_t *img = hist_boxarts[bk]->image;
             float sx    = (float)HIST_ART_W / img->width;
-            float sy    = (float)HIST_ART_H / img->height;
+            float sy    = (float)(HIST_ART_H * 2) / img->height;   /* 240p */
             float scale = sx < sy ? sx : sy;
             int draw_w  = (int)(img->width  * scale);
-            int draw_h  = (int)(img->height * scale);
+            int draw_h  = (int)(img->height * scale / 2);
             int off_x   = (HIST_ART_W - draw_w) / 2;
             int off_y   = (HIST_ART_H - draw_h) / 2;
             rdpq_mode_push();
-            rdpq_set_mode_copy(false);
+            rdpq_set_mode_standard();   /* copy mode cannot scale (240p half-Y draw) */
+            rdpq_mode_filter(FILTER_BILINEAR);
             rdpq_tex_blit(img, (int)list_x + off_x, art_y + off_y,
-                          &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale });
+                          &(rdpq_blitparms_t){ .scale_x = scale, .scale_y = scale / 2 });
             rdpq_mode_pop();
         }
 

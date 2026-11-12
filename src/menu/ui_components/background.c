@@ -329,16 +329,20 @@ void ui_components_background_draw_splash(bool use_custom) {
     if (img || spr) {
         rdpq_clear(BACKGROUND_EMPTY_COLOR);
         rdpq_mode_push();
-            rdpq_set_mode_copy(false);
+            rdpq_set_mode_standard();   /* copy mode cannot scale (240p half-Y draw) */
+            rdpq_mode_filter(FILTER_BILINEAR);
+            /* 240p: draw at half vertical scale, center accordingly */
             if (img) {
                 int x = DISPLAY_CENTER_X - img->width / 2;
-                int y = DISPLAY_CENTER_Y - img->height / 2;
-                rdpq_tex_blit(img, x, y, NULL);
+                int y = DISPLAY_CENTER_Y - img->height / 4;
+                rdpq_tex_blit(img, x, y,
+                    &(rdpq_blitparms_t){ .scale_x = 1.0f, .scale_y = 0.5f });
             } else {
                 surface_t s = sprite_get_pixels(spr);
                 int x = DISPLAY_CENTER_X - s.width / 2;
-                int y = DISPLAY_CENTER_Y - s.height / 2;
-                rdpq_tex_blit(&s, x, y, NULL);
+                int y = DISPLAY_CENTER_Y - s.height / 4;
+                rdpq_tex_blit(&s, x, y,
+                    &(rdpq_blitparms_t){ .scale_x = 1.0f, .scale_y = 0.5f });
             }
         rdpq_mode_pop();
     } else if (background->image_display_list) {

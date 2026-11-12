@@ -44,6 +44,53 @@ static const game_special_t specials[] = {
                        "tournaments where the new characters are pitched against the old ones, all "
                        "the clones being viable against the originals.",
     },
+    {   /* Amped Up -- a Mario Kart 64 romhack; ships under MK64's code NKTE. Art: AMPE. */
+        .tokens     = { "amped", "up", NULL, NULL },
+        .art_code   = "AMPE",
+        .title      = "Mario Kart 64: Amped Up",
+        .developer  = "",
+        .release_jp = "", .release_us = "", .release_eu = "",
+        .description = "A Mario Kart 64 romhack featuring new and remixed courses, restored "
+                       "and expanded content, and quality-of-life improvements over the "
+                       "original game.",
+    },
+    {   /* F-Zero X Climax -- fan expansion; ships under F-Zero X code CFZE. Art: FZLC. */
+        .tokens     = { "f-zero", "climax", NULL, NULL },
+        .art_code   = "FZLC",
+        .title      = "F-Zero X: Climax",
+        .developer  = "Philippe Brodier",
+        .release_jp = "", .release_us = "", .release_eu = "",
+        .description = "A fan-made expansion for F-Zero X that adds a large selection of new "
+                       "tracks, machines, and music drawn from across the F-Zero series.",
+    },
+    {   /* F-Zero X Expansion Kit (cart conversion) -- ships under CFZE. Art: FZLX. */
+        .tokens     = { "f-zero", "expansion", NULL, NULL },
+        .art_code   = "FZLX",
+        .title      = "F-Zero X: Expansion Kit",
+        .developer  = "Philippe Brodier",
+        .release_jp = "", .release_us = "", .release_eu = "",
+        .description = "A cartridge conversion of the Japan-only F-Zero X Expansion Kit, bringing "
+                       "its additional tracks and content to a standard N64 without the 64DD "
+                       "add-on.",
+    },
+    {   /* SM64 Last Impact -- Kaze Emanuar romhack; ships under SM64 code NSME. Art: LIMP. */
+        .tokens     = { "last", "impact", NULL, NULL },
+        .art_code   = "LIMP",
+        .title      = "SM64: Last Impact",
+        .developer  = "Kaze Emanuar",
+        .release_jp = "", .release_us = "", .release_eu = "",
+        .description = "An ambitious Super Mario 64 romhack featuring over 100 stars, all-new "
+                       "worlds, custom music, new bosses, and additional gameplay mechanics.",
+    },
+    {   /* SM64 Star Road -- Skelux romhack; ships under SM64 code NSME. Art: STRD. */
+        .tokens     = { "star", "road", NULL, NULL },
+        .art_code   = "STRD",
+        .title      = "SM64: Star Road",
+        .developer  = "Skelux",
+        .release_jp = "", .release_us = "", .release_eu = "",
+        .description = "A full-length Super Mario 64 romhack with a brand-new overworld and more "
+                       "than 120 stars spread across original courses.",
+    },
 };
 
 #define N_SPECIAL ((int)(sizeof(specials) / sizeof(specials[0])))

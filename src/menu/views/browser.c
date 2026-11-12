@@ -820,8 +820,9 @@ static void kb_process (menu_t *menu) {
             if (c >= 'A' && c <= 'Z' && !kb_caps) c = (char)(c - 'A' + 'a');
             kb_insert(c); sound_play_effect(SFX_CURSOR);
         }
-    } else if (menu->actions.back) {                    /* B: backspace */
+    } else if (menu->actions.back) {                    /* B: backspace; on empty = exit */
         if (kb_len > 0) { kb_text[--kb_len] = '\0'; sound_play_effect(SFX_CURSOR); }
+        else            { kb_mode = 0; sound_play_effect(SFX_EXIT); }
     } else if (menu->actions.settings) {                /* START: OK */
         kb_commit(menu);
     } else if (menu->actions.options) {                 /* R: cancel */
@@ -1690,11 +1691,11 @@ static bool browser_at_root(menu_t *menu) {
 
 /* ---- File-popup draw (called when browser_popup_mode). Fixed min height. ---- */
 #define POPUP_W         (DISPLAY_WIDTH * 2 / 3)   /* ~2/3 of the screen width */
-#define POPUP_LINE_H     22
-#define POPUP_MAX_VIS    12   /* fixed visible rows → constant box height */
+#define POPUP_LINE_H     13   /* 240p: half-height rows */
+#define POPUP_MAX_VIS     8   /* fixed visible rows → constant box height */
 #define POPUP_PAD_X      16
-#define POPUP_PAD_Y      12
-#define POPUP_HDR_H      28   /* path breadcrumb header inside the box */
+#define POPUP_PAD_Y      8
+#define POPUP_HDR_H      16   /* path breadcrumb header inside the box */
 
 /* Is this entry a ROM currently in the favorites (grid) list? */
 static bool popup_entry_is_fav(menu_t *menu, entry_t *e) {

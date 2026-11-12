@@ -4,8 +4,11 @@
  * @ingroup menu
  */
 
+#include <errno.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 
 #include <libdragon.h>
@@ -80,6 +83,69 @@ static void migrate_legacy_layout (const char *prefix) {
     }
 }
 
+/* v10 DIAGNOSTIC black box: append-mode log at sd:/menu/240p_boot_log.txt.
+   Answers: what does dir enumeration see, and which fopen paths fail (errno). */
+static char diag_path[64];
+static bool diag_ok = false;
+
+void menu_diag_log (const char *fmt, ...) {
+    if (!diag_ok) return;
+    FILE *f = fopen(diag_path, "ab");
+    if (!f) return;
+    va_list va;
+    va_start(va, fmt);
+    vfprintf(f, fmt, va);
+    va_end(va);
+    fclose(f);
+}
+
+static void diag_probe_open (const char *p) {
+    FILE *f = fopen(p, "rb");
+    if (f) {
+        char b[16];
+        size_t r = fread(b, 1, 8, f);
+        fclose(f);
+        menu_diag_log("open OK  (%d bytes) %s\n", (int)r, p);
+    } else {
+        menu_diag_log("open FAIL errno=%d %s\n", errno, p);
+    }
+}
+
+static void diag_probe_dir (const char *p) {
+    dir_t info;
+    int n = 0;
+    char first[6][24] = {{0}};
+    int r = dir_findfirst(p, &info);
+    while (r == 0) {
+        if (n < 6) {
+            snprintf(first[n], sizeof(first[0]), "%s%s", info.d_name,
+                     info.d_type == DT_DIR ? "/" : "");
+        }
+        n++;
+        r = dir_findnext(p, &info);
+    }
+    menu_diag_log("dir %s -> %d entries:", p, n);
+    for (int i = 0; i < n && i < 6; i++) menu_diag_log(" %s", first[i]);
+    menu_diag_log("\n");
+}
+
+static void diag_run_probes (const char *prefix) {
+    snprintf(diag_path, sizeof(diag_path), "%smenu/240p_boot_log.txt", prefix);
+    FILE *f = fopen(diag_path, "wb");
+    if (!f) return;
+    fprintf(f, "=== v10 probes t=%llu ms ===\n", get_ticks_ms());
+    fclose(f);
+    diag_ok = true;
+    diag_probe_dir("sd:/");
+    diag_probe_dir("sd:/menu");
+    diag_probe_dir("sd:/menu/boxart");
+    diag_probe_dir("sd:/Games A-M");
+    diag_probe_open("sd:/menu/config.ini");
+    diag_probe_open("sd:/menu/n64ever/favorites.ini");
+    diag_probe_open("sd:/menu/boxart/CD6Z/front.sprite");
+    diag_probe_open("sd:/menu/boxart/NSME/front.sprite");
+}
+
 /**
  * @brief Initialize the menu system.
  *
@@ -108,6 +174,9 @@ static void menu_init (boot_params_t *boot_params) {
         menu->next_mode = MENU_MODE_FAULT;
     }
     bt_flash = get_ticks_ms();
+    if (menu->flashcart_err == FLASHCART_OK) {
+        diag_run_probes(menu->storage_prefix);
+    }
 
     joypad_init();
     timer_init();
@@ -161,20 +230,21 @@ static void menu_init (boot_params_t *boot_params) {
        (below) so the boot splash is on screen during the favorites/history load
        instead of a black screen. The *_bk_path strings stay alive until then. */
 
-    // Force interlacing off in VI settings for TVs and other devices that struggle with interlaced video input.
-    interlaced = !menu->settings.force_progressive_scan;
+    /* TRUE 240p: 640x240 non-interlaced, all VI filters off — crisp and flicker-free
+       on CRTs. The whole UI is laid out for 240 lines (see ui_components/constants.h).
+       640 wide keeps horizontal detail and stays clear of the VI's 16bpp NTSC bug that
+       FILTERS_DISABLED would hit at width <= 320 (no X_SCALE workaround involved).
+       Progressive scan is unconditional now; the old force_progressive_scan setting
+       paired INTERLACE_OFF with FILTERS_RESAMPLE, which is a worse image for no gain. */
+    interlaced = false;
 
     resolution_t resolution = {
         .width = 640,
-        .height = 480,
-        .interlaced = interlaced ? INTERLACE_HALF : INTERLACE_OFF,
+        .height = 240,
+        .interlaced = INTERLACE_OFF,
     };
 
-    /* NOTE: a 32-bit framebuffer at 640x480 BLACK-SCREENS on real N64 hardware (the VI can't
-       sustain 640x480x32bpp), so stay 16-bit. The cart-body banding that 32bpp would have fixed
-       has to be solved a 16bpp-compatible way (dither tuning), not by deepening the framebuffer
-       at this resolution. */
-    display_init(resolution, DEPTH_16_BPP, 2, GAMMA_NONE, interlaced ? FILTERS_DISABLED : FILTERS_RESAMPLE);
+    display_init(resolution, DEPTH_16_BPP, 2, GAMMA_NONE, FILTERS_DISABLED);
     
     if (menu->settings.pal60_enabled) { // it is not given that hardware VI mods understand the output
         tv_type_t tv_type = get_tv_type();

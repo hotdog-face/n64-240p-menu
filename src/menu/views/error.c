@@ -2,9 +2,15 @@
 #include "../sound.h"
 
 
+static int error_frames = 0;
+#define ERROR_TIMEOUT_FRAMES (6 * 60)   /* auto-return after ~6s: an error screen must never soft-lock */
+
 static void process (menu_t *menu) {
-    if (menu->actions.back) {
+    error_frames++;
+    if (menu->actions.back || menu->actions.enter || menu->actions.settings ||
+        error_frames > ERROR_TIMEOUT_FRAMES) {
         sound_play_effect(SFX_EXIT);
+        error_frames = 0;
         /* Return to wherever the error was raised from (grid/history), defaulting
            to the file browser when the caller didn't specify. */
         menu->next_mode = (menu->error_return_mode != MENU_MODE_NONE)

@@ -119,6 +119,7 @@ typedef struct {
         bool options;
         bool settings;
         bool lz_context;
+        bool alt;         /**< L trigger (Z keeps lz_context): carousel Surprise Me */
     } actions;
 
     /* menu_init boot timing (ms): [0]flashcart [1]coreinit [2]display [3]fonts
